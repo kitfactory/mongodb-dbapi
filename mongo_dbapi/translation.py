@@ -113,7 +113,13 @@ def _literal_value(
         try:
             return node.to_python()
         except Exception:
-            return node.this
+            try:
+                return int(node.this)
+            except Exception:
+                try:
+                    return float(node.this)
+                except Exception:
+                    return node.this
     if isinstance(node, exp.Column):
         name = ".".join(part.name for part in node.parts if hasattr(part, "name"))
         if name in params_map:
@@ -225,9 +231,19 @@ def _condition_to_filter(
         value = _literal_value(node.expression, params_map, subqueries)
         regex = _like_to_regex(str(value))
         return {field: {"$regex": regex, "$options": "i"}}
+    def _strip_slashes(val: Any) -> str:
+        sval = str(val)
+        if sval.startswith("/") and sval.endswith("/") and len(sval) >= 2:
+            return sval[1:-1]
+        return sval
+
     if hasattr(exp, "Regex") and isinstance(node, getattr(exp, "Regex")):
         field = _field_name(node.this, params_map)
-        pattern = _literal_value(node.expression, params_map, subqueries)
+        pattern = _strip_slashes(_literal_value(node.expression, params_map, subqueries))
+        return {field: {"$regex": str(pattern)}}
+    if hasattr(exp, "RegexpLike") and isinstance(node, getattr(exp, "RegexpLike")):
+        field = _field_name(node.this, params_map)
+        pattern = _strip_slashes(_literal_value(node.expression, params_map, subqueries))
         return {field: {"$regex": str(pattern)}}
     if isinstance(node, exp.In):
         field = _field_name(node.this, params_map)

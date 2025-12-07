@@ -23,10 +23,12 @@ def clean_db():
     db[COLLECTION].delete_many({})
     db["orders"].delete_many({})
     db["addresses"].delete_many({})
+    db["cities"].delete_many({})
     yield
     db[COLLECTION].delete_many({})
     db["orders"].delete_many({})
     db["addresses"].delete_many({})
+    db["cities"].delete_many({})
     conn.close()
 
 
@@ -322,4 +324,53 @@ def test_from_subquery_select():
     cur.execute("SELECT id, name FROM (SELECT id, name FROM users WHERE id >= %s) AS t WHERE id < %s ORDER BY id DESC", (2, 3))
     rows = cur.fetchall()
     assert rows == [(2, "B")]
+    conn.close()
+
+
+def test_ilike_and_regex_literal():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (1, "alice"))
+    cur.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (2, "bob"))
+    cur.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (3, "bobby"))
+    cur.execute("SELECT id FROM users WHERE name ILIKE %s ORDER BY id", ("b%",))
+    assert cur.fetchall() == [(2,), (3,)]
+    cur.execute("SELECT id FROM users WHERE name REGEXP '/^bo/' ORDER BY id")
+    assert cur.fetchall() == [(2,), (3,)]
+    conn.close()
+
+
+def test_three_hop_join():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (id, name) VALUES (1, 'U1')")
+    cur.execute("INSERT INTO users (id, name) VALUES (2, 'U2')")
+    cur.execute("INSERT INTO orders (id, user_id) VALUES (10, 1)")
+    cur.execute("INSERT INTO addresses (id, order_id, city_id) VALUES (100, 10, 1000)")
+    cur.execute("INSERT INTO cities (id, name) VALUES (1000, 'City')")
+    sql = """
+    SELECT u.id, c.name
+    FROM users u
+    JOIN orders o ON u.id = o.user_id
+    JOIN addresses a ON o.id = a.order_id
+    JOIN cities c ON a.city_id = c.id
+    WHERE c.name = %s
+    """
+    cur.execute(sql, ("City",))
+    assert cur.fetchall() == [(1, "City")]
+    conn.close()
+
+
+def test_binary_and_uuid():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    import uuid
+
+    bin_data = b"\x01\x02\x03"
+    uid = uuid.uuid4()
+    cur.execute("INSERT INTO users (id, name, uid, bin) VALUES (%s, %s, %s, %s)", (5, "Bin", uid, bin_data))
+    cur.execute("SELECT uid, bin FROM users WHERE id = %s", (5,))
+    row = cur.fetchone()
+    assert row[0] == str(uid)
+    assert row[1] == "AQID"
     conn.close()

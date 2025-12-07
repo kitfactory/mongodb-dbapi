@@ -6,11 +6,11 @@
 - [x] テスト環境の LD_LIBRARY_PATH（`mongodb-4.4/libssl1.1/usr/lib/x86_64-linux-gnu`）を確認
 
 ## P1: SQLAlchemy Core 強化（Table/Column CRUD/DDL/Index）
-- [ ] Core 向け CRUD/DDL/Index の翻訳パスを実装（Table/Column ベース）
+- [x] Core 向け CRUD/DDL/Index の翻訳パスを実装（Table/Column ベース）
 - [x] サブクエリ（WHERE IN/EXISTS）を先行実行し結果を置換する実通信テストを追加
 - [x] FROM サブクエリを先行実行する経路と実通信テストを追加
-- [ ] UNION ALL、HAVING、等価 JOIN 多段（最大 3 段）の実通信テストを追加
-- [ ] ILIKE/正規表現リテラル、名前付きパラメータ（dict）、型拡張（Decimal/UUID/tz datetime/Binary）の実装とテスト
+- [x] UNION ALL、HAVING、等価 JOIN 多段（最大 3 段）の実通信テストを追加
+- [x] ILIKE/正規表現リテラル、名前付きパラメータ（dict）、型拡張（Decimal/UUID/tz datetime/Binary）の実装とテスト
 - [ ] SQLAlchemy Core 経由の CRUD/DDL/Index 結合テストを 4.4 環境で通す
 
 ## P2: ORM 最小 CRUD
