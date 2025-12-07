@@ -3,6 +3,7 @@ import os
 import pytest
 
 from mongo_dbapi import MongoDbApiError, connect
+from mongo_dbapi.async_dbapi import connect_async
 from bson import ObjectId
 import datetime
 from sqlalchemy import create_engine, text, Table, Column, Integer, String, MetaData, select, Index
