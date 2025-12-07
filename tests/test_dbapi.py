@@ -398,6 +398,31 @@ def test_sqlalchemy_union_distinct_is_rejected():
     metadata.drop_all(engine)
 
 
+def test_union_all_with_order_limit():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE id >= 0")
+    cur.execute("INSERT INTO users (id, name) VALUES (1, 'U1')")
+    cur.execute("INSERT INTO users (id, name) VALUES (2, 'U2')")
+    cur.execute("INSERT INTO users (id, name) VALUES (3, 'U3')")
+    cur.execute(
+        "SELECT id FROM users WHERE id = 1 UNION ALL SELECT id FROM users WHERE id = 3 ORDER BY id DESC"
+    )
+    rows = cur.fetchall()
+    assert sorted(rows) == [(1,), (3,)]
+    conn.close()
+
+
+def test_connect_invalid_host_e7():
+    uri = "mongodb://127.0.0.1:1/?serverSelectionTimeoutMS=500&connectTimeoutMS=500"
+    with pytest.raises(Exception) as exc:
+        conn = connect(uri, MONGODB_DB)
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM users")
+    msg = str(exc.value)
+    assert "[mdb][E7]" in msg or "ServerSelectionTimeoutError" in msg or "Connection refused" in msg
+
+
 def test_transaction_on_unsupported_server_is_noop():
     # 3.6 相当サーバー想定で、begin/commit が no-op で例外にならないことを確認
     conn = connect("mongodb://127.0.0.1:27018", MONGODB_DB)

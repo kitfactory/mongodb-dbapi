@@ -57,3 +57,16 @@ def test_async_param_mismatch_raises():
         await conn.close()
 
     asyncio.run(_run())
+
+
+def test_async_connection_failed_e7():
+    async def _run():
+        uri = "mongodb://127.0.0.1:1/?serverSelectionTimeoutMS=500&connectTimeoutMS=500"
+        with pytest.raises(Exception) as exc:
+            conn = await connect_async(uri, MONGODB_DB)
+            cur = await conn.cursor()
+            await cur.execute("SELECT id FROM users")
+        msg = str(exc.value)
+        assert "[mdb][E7]" in msg or "ServerSelectionTimeoutError" in msg or "Connection refused" in msg
+
+    asyncio.run(_run())
