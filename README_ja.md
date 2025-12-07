@@ -72,6 +72,30 @@ MONGODB_URI=mongodb://127.0.0.1:27018 MONGODB_DB=mongo_dbapi_test .venv/bin/pyte
 - 接続スキーム: `mongodb+dbapi://...` を想定（dialect 実装予定）
 - スコープ: Core の text() ベースで動作確認済み。Core の Table/Column 互換強化と ORM CRUD は今後拡張予定。async dialect はロードマップで検討中。
 
+## Async (FastAPI/Core) - ベータ
+- `mongo_dbapi.async_dbapi.connect_async` で非同期ラッパーを提供（現時点では sync をスレッドプールでラップ。将来はネイティブ async 検討）。同期と同じ Core 機能（CRUD/DDL/Index、JOIN/UNION ALL/HAVING/IN/EXISTS/FROM サブクエリ）を await で実行可能。
+- トランザクション: MongoDB 4.x 以降で有効。3.6 は no-op。RDB とロック/性能が異なるため重いトランザクション用途は非推奨。
+- FastAPI 例:
+```python
+from fastapi import FastAPI, Depends
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncConnection
+from sqlalchemy import text
+
+engine = create_async_engine("mongodb+dbapi://127.0.0.1:27019/mongo_dbapi_test")
+app = FastAPI()
+
+async def get_conn() -> AsyncConnection:
+    async with engine.connect() as conn:
+        yield conn
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: str, conn: AsyncConnection = Depends(get_conn)):
+    rows = await conn.execute(text("SELECT id, name FROM users WHERE id = :id"), {"id": user_id})
+    row = rows.fetchone()
+    return dict(row) if row else {}
+```
+- 制限: async ORM/relationship、statement cache は対象外。内部はスレッドプールのため高負荷時はスレッド/接続数に注意。
+
 ## 補足
 - MongoDB 3.6 などトランザクション未対応環境では `begin/commit/rollback` を no-op の成功扱いとします。4.x 以降（レプリカセット）ではセッションが有効で、同梱 4.4 で全テスト通過済みです。
 - エラーメッセージは `docs/spec.md` に定義された固定文字列です。ログは DEBUG 時のみ出力し、INFO では出しません。

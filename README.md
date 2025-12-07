@@ -67,6 +67,30 @@ print(cur.rowcount)    # 1
 - Intended scheme: `mongodb+dbapi://...` (dialect implementation planned).
 - Scope: Core text() を中心に動作確認済み。Core の Table/Column 対応強化と ORM CRUD は今後拡張予定。async dialect はロードマップ上で検討中。
 
+## Async (FastAPI/Core) - beta
+- Async wrapper provided via `mongo_dbapi.async_dbapi.connect_async` (wraps sync driver in a thread pool for now; native async is planned). API mirrors sync Core: awaitable CRUD/DDL/Index, JOIN/UNION ALL/HAVING/IN/EXISTS/FROM subquery.
+- Transactions: effective on MongoDB 4.x+ only; 3.6 is no-op. Be mindful that MongoDB transactions differ from RDBMS in locking/perf; avoid heavy transactional workloads.
+- FastAPI example:
+```python
+from fastapi import FastAPI, Depends
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncConnection
+from sqlalchemy import text
+
+engine = create_async_engine("mongodb+dbapi://127.0.0.1:27019/mongo_dbapi_test")
+app = FastAPI()
+
+async def get_conn() -> AsyncConnection:
+    async with engine.connect() as conn:
+        yield conn
+
+@app.get("/users/{user_id}")
+async def get_user(user_id: str, conn: AsyncConnection = Depends(get_conn)):
+    rows = await conn.execute(text("SELECT id, name FROM users WHERE id = :id"), {"id": user_id})
+    row = rows.fetchone()
+    return dict(row) if row else {}
+```
+- Limitations: async ORM/relationship and statement cache are out of scope; heavy concurrency uses a thread pool under the hood. 
+
 ## Running tests
 ```bash
 PORT=27018 ./startdb.sh  # if 27017 is taken
