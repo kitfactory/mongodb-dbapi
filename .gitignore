@@ -13,6 +13,7 @@ wheels/
 mongodb-linux-*/
 mongodb-3.6/
 mongodb-4.4/
+mongodb-*/ 
 mongodb-*.tgz
 data/
 logs/
