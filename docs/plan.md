@@ -14,8 +14,8 @@
 - [x] SQLAlchemy Core 経由の CRUD/DDL/Index 結合テストを 4.4 環境で通す
 
 ## P2: ORM 最小 CRUD
-- [ ] 単一テーブル相当で PK を `_id` にマッピングし、INSERT/SELECT/UPDATE/DELETE が動く ORM 経路を実装
-- [ ] ORM 経由の実通信テスト（リレーションなし）を追加
+- [x] 単一テーブル相当で PK を `_id` にマッピングし、INSERT/SELECT/UPDATE/DELETE が動く ORM 経路を実装
+- [x] ORM 経由の実通信テスト（リレーションなし）を追加
 
 ## P3: async dialect（Core CRUD 相当）
 - [ ] Core CRUD/DDL/Index を async でラップする dialect を設計・実装
