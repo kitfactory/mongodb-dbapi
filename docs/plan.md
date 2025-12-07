@@ -11,7 +11,7 @@
 - [x] FROM サブクエリを先行実行する経路と実通信テストを追加
 - [x] UNION ALL、HAVING、等価 JOIN 多段（最大 3 段）の実通信テストを追加
 - [x] ILIKE/正規表現リテラル、名前付きパラメータ（dict）、型拡張（Decimal/UUID/tz datetime/Binary）の実装とテスト
-- [ ] SQLAlchemy Core 経由の CRUD/DDL/Index 結合テストを 4.4 環境で通す
+- [x] SQLAlchemy Core 経由の CRUD/DDL/Index 結合テストを 4.4 環境で通す
 
 ## P2: ORM 最小 CRUD
 - [ ] 単一テーブル相当で PK を `_id` にマッピングし、INSERT/SELECT/UPDATE/DELETE が動く ORM 経路を実装
