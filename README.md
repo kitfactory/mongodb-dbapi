@@ -1,6 +1,11 @@
-# mongo-dbapi
+# mongodb-dbapi
 
 DBAPI-style adapter that lets you execute a limited subset of SQL against MongoDB by translating SQL to Mongo queries. Built on `pymongo` (3.13.x for MongoDB 3.6 compatibility) and `SQLGlot`.
+
+Purpose: let existing DB-API / SQLAlchemy Core / FastAPI code treat MongoDB as “just another dialect.”
+
+- PyPI package name: `mongodb-dbapi`
+- Module import name: `mongo_dbapi`
 
 ## Features
 - DBAPI-like `Connection`/`Cursor`
@@ -72,7 +77,7 @@ print(cur.rowcount)    # 1
 - Scope: Core text()/Table/Column CRUD/DDL/Index、ORM 最小 CRUD（単一テーブル）、JOIN/UNION ALL/HAVING/subquery/ROW_NUMBER を実通信で確認済み。async dialect は Core CRUD/DDL/Index のラップで、ネイティブ async は今後検討。
 
 ## Async (FastAPI/Core) - beta
-- Async wrapper provided via `mongo_dbapi.async_dbapi.connect_async` (wraps sync driver in a thread pool for now; native async is planned). API mirrors sync Core: awaitable CRUD/DDL/Index, JOIN/UNION ALL/HAVING/IN/EXISTS/FROM subquery.
+- **Current implementation wraps the sync driver in a thread pool** (native async driver is planned). Provided via `mongo_dbapi.async_dbapi.connect_async`. API mirrors sync Core: awaitable CRUD/DDL/Index, JOIN/UNION ALL/HAVING/IN/EXISTS/FROM subquery.
 - Transactions: effective on MongoDB 4.x+ only; 3.6 is no-op. Be mindful that MongoDB transactions differ from RDBMS in locking/perf; avoid heavy transactional workloads.
 - Window: `ROW_NUMBER` is available on MongoDB 5.x+; earlier versions return `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION`.
 - FastAPI example:
@@ -96,6 +101,10 @@ async def get_user(user_id: str, conn: AsyncConnection = Depends(get_conn)):
 ```
 - Limitations: async ORM/relationship and statement cache are out of scope; heavy concurrency uses a thread pool under the hood. 
 
+## Support levels
+- Tested/stable (real Mongo runs): single-collection CRUD, WHERE/ORDER/LIMIT/OFFSET, INNER/LEFT equijoin (up to 3 hops), GROUP BY + aggregates + HAVING, subqueries (WHERE IN/EXISTS, FROM (SELECT ...)), UNION ALL, `ROW_NUMBER()` (MongoDB 5.x+).
+- Not supported / constraints: non-equi JOIN, FULL/RIGHT OUTER, distinct `UNION`, window functions other than `ROW_NUMBER`, correlated subqueries, ORM relationships; async is thread-pool based.
+
 ## Running tests
 ```bash
 PORT=27018 ./startdb.sh  # if 27017 is taken
@@ -105,3 +114,9 @@ MONGODB_URI=mongodb://127.0.0.1:27018 MONGODB_DB=mongo_dbapi_test .venv/bin/pyte
 ## Notes
 - Transactions on MongoDB 3.6 are treated as no-op; 4.x+ (replica set) uses real sessions and the bundled 4.4 binary passes all tests.
 - Error messages are fixed strings per `docs/spec.md`. Keep logs at DEBUG only (default INFO is silent).
+
+## License
+MIT License (see `LICENSE`). Provided as-is without warranty; commercial use permitted.
+
+## GitHub Sponsors
+Maintained in personal time. If this helps you run MongoDB from DB-API/SQLAlchemy stacks, consider supporting via GitHub Sponsors to keep fixes and version updates coming.

@@ -1,6 +1,11 @@
-# mongo-dbapi (日本語)
+# mongodb-dbapi (日本語)
 
 MongoDB に対して限定的な SQL を DBAPI 風に実行するアダプターです。SQL を Mongo クエリに変換し、`pymongo`（MongoDB 3.6 互換のため 3.13.x 系）と `SQLGlot` を利用します。
+
+既存の DB-API / SQLAlchemy Core / FastAPI ベースのコードから、MongoDB を「もうひとつの方言」として扱うことを目的としています。
+
+- PyPI パッケージ名: `mongodb-dbapi`
+- モジュール名: `mongo_dbapi`
 
 ## 特長
 - `connect()` で DBAPI 風の `Connection`/`Cursor` を取得
@@ -77,7 +82,7 @@ MONGODB_URI=mongodb://127.0.0.1:27018 MONGODB_DB=mongo_dbapi_test .venv/bin/pyte
 - スコープ: Core text()/Table/Column の CRUD/DDL/Index、ORM 最小 CRUD（単一テーブル）、JOIN/UNION ALL/HAVING/サブクエリ/ROW_NUMBER を実通信で確認済み。async dialect は Core CRUD/DDL/Index をラップ（ネイティブ async は将来検討）。
 
 ## Async (FastAPI/Core) - ベータ
-- `mongo_dbapi.async_dbapi.connect_async` で非同期ラッパーを提供（現時点では sync をスレッドプールでラップ。将来はネイティブ async 検討）。同期と同じ Core 機能（CRUD/DDL/Index、JOIN/UNION ALL/HAVING/IN/EXISTS/FROM サブクエリ）を await で実行可能。
+- `mongo_dbapi.async_dbapi.connect_async` で非同期ラッパーを提供。**現時点では sync をスレッドプールでラップする実装（ネイティブ async は将来検討）**。同期と同じ Core 機能（CRUD/DDL/Index、JOIN/UNION ALL/HAVING/IN/EXISTS/FROM サブクエリ）を await で実行可能。
 - トランザクション: MongoDB 4.x 以降で有効。3.6 は no-op。RDB とロック/性能が異なるため重いトランザクション用途は非推奨。
 - ウィンドウ: `ROW_NUMBER` は MongoDB 5.x+ のみ対応。それ未満は `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION`。
 - FastAPI 例:
@@ -101,6 +106,16 @@ async def get_user(user_id: str, conn: AsyncConnection = Depends(get_conn)):
 ```
 - 制限: async ORM/relationship、statement cache は対象外。内部はスレッドプールのため高負荷時はスレッド/接続数に注意。
 
+## 保証範囲と制約
+- 実機で安定確認済み: 単一コレクション CRUD、WHERE/ORDER/LIMIT/OFFSET、INNER/LEFT 等価 JOIN（最大 3 段）、GROUP BY + 集計 + HAVING、サブクエリ（WHERE IN/EXISTS, FROM (SELECT ...)), UNION ALL、`ROW_NUMBER()`（MongoDB 5.x+）
+- 非対応/制約: 非等価 JOIN、FULL/RIGHT OUTER、重複除去 `UNION`、`ROW_NUMBER` 以外のウィンドウ関数、相関サブクエリ、ORM リレーション。async はスレッドプール実装。
+
 ## 補足
 - MongoDB 3.6 などトランザクション未対応環境では `begin/commit/rollback` を no-op の成功扱いとします。4.x 以降（レプリカセット）ではセッションが有効で、同梱 4.4 で全テスト通過済みです。
 - エラーメッセージは `docs/spec.md` に定義された固定文字列です。ログは DEBUG 時のみ出力し、INFO では出しません。
+
+## License
+MIT License（`LICENSE` を参照）。無保証ですが商用利用を含め自由に利用できます。
+
+## GitHub Sponsors
+本プロジェクトは個人の空き時間でメンテナンスしています。DB-API / SQLAlchemy 経由で MongoDB を扱う用途で役立っている場合、GitHub Sponsors などで支援いただけると、バグ修正やバージョン追随のモチベーションになります。
