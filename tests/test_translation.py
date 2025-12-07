@@ -50,6 +50,97 @@ def test_window_row_number_without_partition_parses():
     parts = parse_sql("SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM users")
     assert parts.uses_window is True
 
+
+def test_select_simple():
+    parts = parse_sql("SELECT id, name FROM users WHERE id = %s", params=(1,))
+    assert parts.operation == "find"
+    assert parts.collection == "users"
+    assert parts.filter == {"id": 1}
+    assert parts.projection_paths == [("id", "id"), ("name", "name")]
+
+
+def test_insert_simple():
+    parts = parse_sql(
+        "INSERT INTO users (id, name) VALUES (%(id)s, %(name)s)",
+        params={"id": 1, "name": "Alice"},
+    )
+    assert parts.operation == "insert"
+    assert parts.collection == "users"
+    assert parts.values == {"id": 1, "name": "Alice"}
+
+
+def test_update_with_where():
+    parts = parse_sql(
+        "UPDATE users SET name = %(name)s WHERE id = %(id)s",
+        params={"id": 1, "name": "Bob"},
+    )
+    assert parts.operation == "update"
+    assert parts.update == {"$set": {"name": "Bob"}}
+    assert parts.filter == {"id": 1}
+
+
+def test_delete_with_where():
+    parts = parse_sql("DELETE FROM users WHERE id = %(id)s", params={"id": 1})
+    assert parts.operation == "delete"
+    assert parts.filter == {"id": 1}
+
+
+def test_where_like_ilike_regex():
+    parts_like = parse_sql("SELECT * FROM users WHERE name LIKE %(name)s", params={"name": "A%"})
+    assert "$regex" in parts_like.filter.get("name", {})
+    parts_ilike = parse_sql("SELECT * FROM users WHERE name ILIKE %(name)s", params={"name": "alice%"})
+    assert "$regex" in parts_ilike.filter.get("name", {})
+    parts_regex = parse_sql("SELECT * FROM users WHERE name REGEXP '/Al.*ce/'")
+    assert "$regex" in parts_regex.filter.get("name", {})
+
+
+def test_join_inner_and_left():
+    parts_inner = parse_sql(
+        "SELECT u.id, o.id FROM users u JOIN orders o ON u.id = o.user_id"
+    )
+    assert parts_inner.operation == "aggregate"
+    assert any("$lookup" in stage for stage in parts_inner.pipeline or [])
+    parts_left = parse_sql(
+        "SELECT u.id, o.id FROM users u LEFT JOIN orders o ON u.id = o.user_id"
+    )
+    assert any("$lookup" in stage for stage in parts_left.pipeline or [])
+
+
+def test_group_by_and_having():
+    parts = parse_sql("SELECT user_id, COUNT(*) AS cnt FROM orders GROUP BY user_id HAVING cnt > 1")
+    assert parts.operation == "aggregate"
+    assert any("$group" in stage for stage in parts.pipeline or [])
+    assert any("$match" in stage for stage in parts.pipeline or [])
+
+
+def test_union_all_parts():
+    parts = parse_sql("SELECT id FROM users UNION ALL SELECT id FROM archived_users")
+    assert parts.operation == "union_all"
+    assert parts.union_parts and len(parts.union_parts) == 2
+
+
+def test_from_subquery_inline_token():
+    parts = parse_sql("SELECT * FROM (SELECT id, name FROM users WHERE id > 0) AS t")
+    assert parts.operation == "from_subquery"
+    assert parts.inline_token is not None
+    assert parts.subqueries
+
+
+def test_where_in_subquery_registered():
+    parts = parse_sql("SELECT id FROM users WHERE id IN (SELECT user_id FROM orders)")
+    assert parts.subqueries
+    token, sub = next(iter(parts.subqueries.items()))
+    assert token.startswith("__subquery_")
+    assert sub.get("mode") in ("in", "values")
+
+
+def test_window_row_number_with_partition_and_order():
+    parts = parse_sql(
+        "SELECT user_id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at) AS rn FROM events"
+    )
+    assert parts.uses_window is True
+    assert parts.operation == "aggregate"
+
 def test_param_shortage_rejected():
     with pytest.raises(MongoDbApiError) as exc:
         parse_sql("SELECT * FROM users WHERE id = %s", params=None)
