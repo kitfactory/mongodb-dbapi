@@ -245,6 +245,14 @@ def test_delete_without_where_is_blocked():
     conn.close()
 
 
+def test_update_without_where_is_blocked():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    with pytest.raises(MongoDbApiError):
+        cur.execute("UPDATE users SET name = %s", ("X",))
+    conn.close()
+
+
 def test_missing_named_param_raises():
     conn = connect(MONGODB_URI, MONGODB_DB)
     cur = conn.cursor()
@@ -384,6 +392,22 @@ def test_window_function_is_rejected():
     cur = conn.cursor()
     with pytest.raises(MongoDbApiError):
         cur.execute("SELECT id, ROW_NUMBER() OVER (PARTITION BY name) FROM users")
+    conn.close()
+
+
+def test_full_outer_join_is_rejected():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    with pytest.raises(MongoDbApiError):
+        cur.execute("SELECT * FROM users u FULL OUTER JOIN orders o ON u.id = o.user_id")
+    conn.close()
+
+
+def test_window_function_other_than_row_number_is_rejected():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    with pytest.raises(MongoDbApiError):
+        cur.execute("SELECT id, RANK() OVER (ORDER BY id) FROM users")
     conn.close()
 
 

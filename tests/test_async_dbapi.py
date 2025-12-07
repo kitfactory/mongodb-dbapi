@@ -33,3 +33,15 @@ def test_async_invalid_uri_raises():
         assert "[mdb][E1]" in str(exc.value)
 
     asyncio.run(_run())
+
+
+def test_async_unsupported_sql_raises():
+    async def _run():
+        conn = await connect_async(MONGODB_URI, MONGODB_DB)
+        cur = await conn.cursor()
+        with pytest.raises(MongoDbApiError) as exc:
+            await cur.execute("SELECT * FROM users u FULL OUTER JOIN orders o ON u.id = o.user_id")
+        assert "[mdb][E2]" in str(exc.value)
+        await conn.close()
+
+    asyncio.run(_run())
