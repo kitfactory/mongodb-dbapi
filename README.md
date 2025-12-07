@@ -4,17 +4,18 @@ DBAPI-style adapter that lets you execute a limited subset of SQL against MongoD
 
 ## Features
 - DBAPI-like `Connection`/`Cursor`
-- SQL → Mongo: `SELECT/INSERT/UPDATE/DELETE`, `CREATE/DROP TABLE/INDEX` (ASC/DESC, UNIQUE, composite), `WHERE` (comparisons/`AND`/`OR`/`IN`/`BETWEEN`/`LIKE`→`$regex`), `ORDER BY`, `LIMIT/OFFSET`, INNER/LEFT JOIN (equijoin, composite keys up to 2 hops), `GROUP BY` + aggregates (COUNT/SUM/AVG/MIN/MAX)
-- `%s` positional parameters only; unsupported constructs raise Error IDs (e.g. `[mdb][E2]`)
+- SQL → Mongo: `SELECT/INSERT/UPDATE/DELETE`, `CREATE/DROP TABLE/INDEX` (ASC/DESC, UNIQUE, composite), `WHERE` (comparisons/`AND`/`OR`/`IN`/`BETWEEN`/`LIKE`→`$regex`/`ILIKE`/regex literal), `ORDER BY`, `LIMIT/OFFSET`, INNER/LEFT JOIN (equijoin, composite keys up to 3 hops), `GROUP BY` + aggregates (COUNT/SUM/AVG/MIN/MAX) + `HAVING`, `UNION ALL`, subqueries (`WHERE IN/EXISTS`, `FROM (SELECT ...)`), `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` on MongoDB 5.x+
+- `%s` positional and `%(name)s` named parameters; unsupported constructs raise Error IDs (e.g. `[mdb][E2]`)
 - Error IDs for common failures: invalid URI, unsupported SQL, unsafe DML without WHERE, parse errors, connection/auth failures
 - DBAPI fields: `rowcount`, `lastrowid`, `description` (column order: explicit order, or alpha for `SELECT *`; JOIN uses left→right)
 - Transactions: `begin/commit/rollback` wrap Mongo sessions; MongoDB 3.6 and other unsupported envs are treated as no-op success
+- Async dialect (thread-pool backed) for Core CRUD/DDL/Index with FastAPI-friendly usage; minimal ORM CRUD for single-table entities (relationships out of scope)
 
 - Use cases
   - Swap in Mongo as “another dialect” for existing SQLAlchemy Core–based infra (Engine/Connection + Table/Column)
   - Point existing Core-based batch/report jobs at Mongo data with minimal changes
-  - (Future) Minimal ORM CRUD for single-table entities; relationships out of scope initially
-  - (Future) Async dialect for FastAPI/async stacks; currently roadmap only
+  - Minimal ORM CRUD for single-table entities (PK → `_id`)
+  - Async dialect for FastAPI/async stacks (thread-pool implementation; native async later)
 
 ## Requirements
 - Python 3.10+
@@ -56,20 +57,24 @@ print(cur.rowcount)    # 1
 
 ## Supported SQL
 - Statements: `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE/DROP TABLE`, `CREATE/DROP INDEX`
-- WHERE: comparisons (`=`, `<>`, `>`, `<`, `<=`, `>=`), `AND`, `OR`, `IN`, `BETWEEN`, `LIKE` (`%`/`_` → `$regex`)
-- JOIN: INNER/LEFT equijoin (composite keys, up to 2 joins)
-- Aggregation: `GROUP BY` with COUNT/SUM/AVG/MIN/MAX
+- WHERE: comparisons (`=`, `<>`, `>`, `<`, `<=`, `>=`), `AND`, `OR`, `IN`, `BETWEEN`, `LIKE` (`%`/`_` → `$regex`), `ILIKE`, regex literal `/.../`
+- JOIN: INNER/LEFT equijoin (composite keys, up to 3 joins)
+- Aggregation: `GROUP BY` with COUNT/SUM/AVG/MIN/MAX and `HAVING`
+- Subqueries: `WHERE IN/EXISTS` and `FROM (SELECT ...)` (non-correlated; executed first)
+- Set ops: `UNION ALL`
+- Window: `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` on MongoDB 5.x+ (`[mdb][E2]` on earlier versions)
 - ORDER/LIMIT/OFFSET
-- Unsupported: subqueries (future), non-equi joins, FULL/RIGHT OUTER, HAVING, window functions, UNION, regex literals, named params
+- Unsupported: non-equi joins, FULL/RIGHT OUTER, `UNION` (distinct), window functions other than `ROW_NUMBER`, correlated subqueries, ORM relationships
 
 ## SQLAlchemy
 - DBAPI module attributes: `apilevel="2.0"`, `threadsafety=1`, `paramstyle="pyformat"`.
-- Intended scheme: `mongodb+dbapi://...` (dialect implementation planned).
-- Scope: Core text() を中心に動作確認済み。Core の Table/Column 対応強化と ORM CRUD は今後拡張予定。async dialect はロードマップ上で検討中。
+- Scheme: `mongodb+dbapi://...` dialect provided (sync + async/thread-pool).
+- Scope: Core text()/Table/Column CRUD/DDL/Index、ORM 最小 CRUD（単一テーブル）、JOIN/UNION ALL/HAVING/subquery/ROW_NUMBER を実通信で確認済み。async dialect は Core CRUD/DDL/Index のラップで、ネイティブ async は今後検討。
 
 ## Async (FastAPI/Core) - beta
 - Async wrapper provided via `mongo_dbapi.async_dbapi.connect_async` (wraps sync driver in a thread pool for now; native async is planned). API mirrors sync Core: awaitable CRUD/DDL/Index, JOIN/UNION ALL/HAVING/IN/EXISTS/FROM subquery.
 - Transactions: effective on MongoDB 4.x+ only; 3.6 is no-op. Be mindful that MongoDB transactions differ from RDBMS in locking/perf; avoid heavy transactional workloads.
+- Window: `ROW_NUMBER` is available on MongoDB 5.x+; earlier versions return `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION`.
 - FastAPI example:
 ```python
 from fastapi import FastAPI, Depends

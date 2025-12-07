@@ -1,8 +1,8 @@
 # mongo-dbapi 仕様
 
 ## 前提: サポートする SQL 構文（拡張後）
-- 対応: `SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE`（コレクション作成/削除）、`CREATE/DROP INDEX`、`WHERE` の比較 (`=`/`<>`/`>`/`<`/`<=`/`>=`)、`AND`、`OR`、`IN`、`BETWEEN`、`LIKE`（`%`/`_` を `$regex` に変換）、`ILIKE`、正規表現リテラル、`ORDER BY`、`LIMIT`、`OFFSET`、INNER/LEFT JOIN の等価結合（複合キー、最大 3 段）、`GROUP BY` + 集約（COUNT/SUM/AVG/MIN/MAX）+ `HAVING`、`UNION ALL`、サブクエリ（`WHERE IN/EXISTS`、`FROM (SELECT ...)`）
-- 非対応: 非等価 JOIN、フル/右外部 JOIN、ウィンドウ関数（Mongo 5 未満）、`UNION`（重複除去）。
+- 対応: `SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE`（コレクション作成/削除）、`CREATE/DROP INDEX`、`WHERE` の比較 (`=`/`<>`/`>`/`<`/`<=`/`>=`)、`AND`、`OR`、`IN`、`BETWEEN`、`LIKE`（`%`/`_` を `$regex` に変換）、`ILIKE`、正規表現リテラル、`ORDER BY`、`LIMIT`、`OFFSET`、INNER/LEFT JOIN の等価結合（複合キー、最大 3 段）、`GROUP BY` + 集約（COUNT/SUM/AVG/MIN/MAX）+ `HAVING`、`UNION ALL`、サブクエリ（`WHERE IN/EXISTS`、`FROM (SELECT ...)`）、`ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)`（MongoDB 5.x+）
+- 非対応: 非等価 JOIN、フル/右外部 JOIN、`ROW_NUMBER` 以外のウィンドウ関数、MongoDB 5 未満でのウィンドウ関数、`UNION`（重複除去）。
 - プレースホルダー: `%s` と `%(name)s` の両方に対応（不足/余剰は `[mdb][E4]`）。
 - `SELECT *` 時のフィールド順: コレクションのフィールド名をアルファベット順で返す。明示列指定時は SQL 記述順で返す。JOIN 時の `SELECT *` は左テーブル→右テーブルの順でアルファベット順。
 - パーサー: SQLGlot を使用し、将来のサブクエリ対応を可能にする。
@@ -47,7 +47,7 @@
 ### 2.4. INNER/LEFT JOIN（等価結合）をサポートする (F2, F8)
 - 前提: `SELECT u.id, o.name FROM users u JOIN orders o ON u.id = o.user_id`
 - 条件: `cursor.execute(sql)`
-- 振る舞い: 基底テーブルから `$lookup` で結合し、JOIN キーが一致する行を返す。LEFT JOIN の場合は右側が欠損しても返す。JOIN は 2 段まで、結合条件は等価のみ。
+- 振る舞い: 基底テーブルから `$lookup` で結合し、JOIN キーが一致する行を返す。LEFT JOIN の場合は右側が欠損しても返す。JOIN は最大 3 段まで、結合条件は等価のみ。
 
 ### 2.5. LIKE/BETWEEN/OR をサポートする (F2, F8)
 - 前提: `LIKE '%foo%'`, `BETWEEN 1 AND 10`, `OR` 条件を含む SELECT
@@ -62,7 +62,7 @@
 ### 2.7. GROUP BY と集計関数をサポートする (F2, F8)
 - 前提: `SELECT status, COUNT(*) FROM orders GROUP BY status`
 - 条件: `cursor.execute(sql)`
-- 振る舞い: `$group` に変換し、集計結果を返す（COUNT/SUM/AVG/MIN/MAX をサポート）。HAVING は未対応。
+- 振る舞い: `$group` に変換し、集計結果を返す（COUNT/SUM/AVG/MIN/MAX をサポート）。HAVING は GROUP 結果に対する比較/AND/OR/IN/BETWEEN/LIKE を `$match` として適用し、非集計列のみの HAVING は `[mdb][E2]`。
 
 ### 2.8. WHERE IN/EXISTS のサブクエリを先行実行して適用する (F11)
 - 前提: `SELECT id FROM users WHERE id IN (SELECT id FROM users WHERE score >= 10)` または `WHERE EXISTS (SELECT 1 FROM users WHERE active = true)`
@@ -73,6 +73,11 @@
 - 前提: `SELECT id, name FROM (SELECT id, name FROM users WHERE id >= 2) AS t WHERE id < 3`
 - 条件: `cursor.execute(sql)`
 - 振る舞い: FROM 句のサブクエリを先行実行し、得られた行をインラインビューとして保持した上で、外側の WHERE/ORDER/LIMIT/投影を適用する（非相関サブクエリのみサポート）。
+
+### 2.10. ROW_NUMBER ウィンドウ関数をサポートする (F12)
+- 前提: `SELECT id, ROW_NUMBER() OVER (PARTITION BY category ORDER BY created_at) AS rn FROM items`
+- 条件: `cursor.execute(sql)`
+- 振る舞い: MongoDB 5.x 以降では `$setWindowFields` を用いて ROW_NUMBER を計算する。PARTITION BY が省略された場合は全件を一括で計算する。MongoDB 5 未満では `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION` を返す。
 
 ## 3. DML 変換 (F3)
 ### 3.1. INSERT が insert_one に変換される (F3)
@@ -180,7 +185,7 @@
 - DBAPI モジュール属性（`apilevel`、`threadsafety`、`paramstyle=pyformat`）を提供し、dialect から利用できるようにする。接続スキームは `mongodb+dbapi://`。
 - SQLAlchemy からの CRUD/SELECT/WHERE/ORDER/LIMIT/OFFSET/JOIN/DDL 呼び出しを受け付ける。
 - トランザクションは MongoDB 4.0+ でのみ有効化し、3.6 では no-op で成功扱いとする。
-- ウィンドウ関数を含むクエリは MongoDB 5.0 未満では `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION` を返す。
+- ウィンドウ関数（ROW_NUMBER）のみ MongoDB 5.x+ で `$setWindowFields` に変換する。MongoDB 5.0 未満では `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION` を返す。
 - async 方言: Core CRUD/DDL/Index を async API（`create_async_engine`）経由で実行できるようにし、当面は sync 実装をスレッドプールでラップする（将来ネイティブ async も検討）。トランザクションポリシーは sync と同じ（4.x のみ有効、3.6 は no-op）、ORM/relationship や statement cache は対象外。README に保証レベルと制限事項を明記する。
 
 ## 11. 拡張機能（F11/F12）
@@ -194,4 +199,4 @@
   - 型拡張: Decimal/UUID は文字列化、tz 付き datetime はそのまま返却、Binary は base64 文字列化。未対応型は文字列化。  
 - P2: ORM 最小 CRUD（単一テーブル相当の add/get/select/update/delete。PK を `_id` にマッピングし、リレーション/JOIN は当面対象外）  
 - P3: async dialect（Core CRUD/DDL/Index を async でラップ。トランザクション方針は同期と同じ。実装はスレッドプールラップをベースとし、ネイティブ async は将来検討）  
-- P4: Mongo 5+ 拡張（低優先度。`ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` を `$setWindowFields` で対応。Mongo 5.0 未満は [mdb][E2]。その他のウィンドウ関数は非対応）
+- P4: Mongo 5+ 拡張（低優先度。`ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` を `$setWindowFields` で対応。Mongo 5.0 未満は [mdb][E2]。その他のウィンドウ関数は非対応。7.x で動作確認済み）

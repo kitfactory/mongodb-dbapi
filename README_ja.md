@@ -4,16 +4,17 @@ MongoDB に対して限定的な SQL を DBAPI 風に実行するアダプター
 
 ## 特長
 - `connect()` で DBAPI 風の `Connection`/`Cursor` を取得
-- SQL→Mongo 変換: `SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE/INDEX`（インデックスは ASC/DESC、UNIQUE、複合に対応）、`WHERE`（比較/`AND`/`OR`/`IN`/`BETWEEN`/`LIKE`→`$regex`）、`ORDER BY`、`LIMIT/OFFSET`、INNER/LEFT JOIN（等価結合、複合キー/2 段まで）、`GROUP BY` + 集計（COUNT/SUM/AVG/MIN/MAX）
-- プレースホルダーは `%s` のみ対応。未対応構文は Error ID（例: `[mdb][E2]`）を返す
+- SQL→Mongo 変換: `SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE/INDEX`（インデックスは ASC/DESC、UNIQUE、複合に対応）、`WHERE`（比較/`AND`/`OR`/`IN`/`BETWEEN`/`LIKE`→`$regex`、`ILIKE`、正規表現リテラル）、`ORDER BY`、`LIMIT/OFFSET`、INNER/LEFT JOIN（等価結合、複合キー/最大 3 段）、`GROUP BY` + 集計（COUNT/SUM/AVG/MIN/MAX）+ `HAVING`、`UNION ALL`、サブクエリ（`WHERE IN/EXISTS`、`FROM (SELECT ...)`）、`ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)`（MongoDB 5.x+）
+- プレースホルダーは `%s` と `%(name)s` をサポート。未対応構文は Error ID（例: `[mdb][E2]`）を返す
 - 代表的なエラー ID: URI 無効、未対応 SQL、WHERE なしの危険 DML、解析失敗、接続/認証失敗、トランザクション非対応など
 - DBAPI 項目: `rowcount`、`lastrowid`、`description`（列順は明示順、`SELECT *` はアルファベット順。JOIN 時は左→右）
 - トランザクション: `begin/commit/rollback` をセッションでラップ。MongoDB 3.6 など未対応環境では no-op の成功扱い
+- async dialect（スレッドプールラップ）で Core CRUD/DDL/Index を FastAPI などから await 利用可能。ORM は単一テーブル CRUD を最小サポート（リレーション非対応）
 - ユースケース例:
   - SQLAlchemy Core ベースの社内基盤に「Mongo 方言」を差し込む（Engine/Connection + Table/Column）
   - Core ベースのバッチ/レポートを最小変更で Mongo データに向ける
-  - （将来）単一テーブル相当の ORM CRUD を最小サポートする実験
-  - （将来）async dialect で FastAPI/async アプリから同じ API で扱う（ロードマップ上）
+  - 単一テーブル相当の ORM CRUD を最小サポートする実験
+  - async dialect で FastAPI/async アプリから同じ API で扱う（内部はスレッドプール、ネイティブ async は将来検討）
 
 ## 要件
 - Python 3.10+
@@ -55,11 +56,14 @@ print(cur.rowcount)    # 1
 
 ## 対応している SQL
 - ステートメント: `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE/DROP TABLE`, `CREATE/DROP INDEX`
-- WHERE: 比較演算子（`=`, `<>`, `>`, `<`, `<=`, `>=`）、`AND`、`OR`、`IN`、`BETWEEN`、`LIKE`（`%`/`_` を `$regex` に変換）
-- JOIN: INNER/LEFT 等価結合（複合キー、最大 2 段）
-- 集計: `GROUP BY` + 集計（COUNT/SUM/AVG/MIN/MAX）
+- WHERE: 比較演算子（`=`, `<>`, `>`, `<`, `<=`, `>=`）、`AND`、`OR`、`IN`、`BETWEEN`、`LIKE`（`%`/`_` → `$regex`）、`ILIKE`、正規表現リテラル `/.../`
+- JOIN: INNER/LEFT 等価結合（複合キー、最大 3 段）
+- 集計: `GROUP BY` + 集計（COUNT/SUM/AVG/MIN/MAX）+ `HAVING`
+- サブクエリ: `WHERE IN/EXISTS` と `FROM (SELECT ...)`（非相関のみ、先行実行）
+- 集合: `UNION ALL`
+- ウィンドウ: `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)`（MongoDB 5.x+、それ未満は `[mdb][E2]`）
 - `ORDER BY`, `LIMIT`, `OFFSET`
-- 未対応: サブクエリ（将来対応予定）、非等価 JOIN、FULL/RIGHT OUTER、HAVING、ウィンドウ関数、UNION、正規表現リテラル、名前付きパラメータ
+- 未対応: 非等価 JOIN、FULL/RIGHT OUTER、`UNION`（重複除去）、`ROW_NUMBER` 以外のウィンドウ関数、相関サブクエリ、ORM リレーション
 
 ## テスト実行
 ```bash
@@ -69,12 +73,13 @@ MONGODB_URI=mongodb://127.0.0.1:27018 MONGODB_DB=mongo_dbapi_test .venv/bin/pyte
 
 ## SQLAlchemy
 - DBAPI モジュール属性: `apilevel="2.0"`, `threadsafety=1`, `paramstyle="pyformat"`（方言実装を前提）
-- 接続スキーム: `mongodb+dbapi://...` を想定（dialect 実装予定）
-- スコープ: Core の text() ベースで動作確認済み。Core の Table/Column 互換強化と ORM CRUD は今後拡張予定。async dialect はロードマップで検討中。
+- 接続スキーム: `mongodb+dbapi://...` の dialect を提供（sync/async スレッドプール）
+- スコープ: Core text()/Table/Column の CRUD/DDL/Index、ORM 最小 CRUD（単一テーブル）、JOIN/UNION ALL/HAVING/サブクエリ/ROW_NUMBER を実通信で確認済み。async dialect は Core CRUD/DDL/Index をラップ（ネイティブ async は将来検討）。
 
 ## Async (FastAPI/Core) - ベータ
 - `mongo_dbapi.async_dbapi.connect_async` で非同期ラッパーを提供（現時点では sync をスレッドプールでラップ。将来はネイティブ async 検討）。同期と同じ Core 機能（CRUD/DDL/Index、JOIN/UNION ALL/HAVING/IN/EXISTS/FROM サブクエリ）を await で実行可能。
 - トランザクション: MongoDB 4.x 以降で有効。3.6 は no-op。RDB とロック/性能が異なるため重いトランザクション用途は非推奨。
+- ウィンドウ: `ROW_NUMBER` は MongoDB 5.x+ のみ対応。それ未満は `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION`。
 - FastAPI 例:
 ```python
 from fastapi import FastAPI, Depends

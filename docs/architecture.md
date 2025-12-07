@@ -7,7 +7,7 @@
 - 結果整形層: `pymongo` の返却値を DBAPI 互換の行タプル/カウントに整形。JOIN 時は `$lookup` の結果をフラット化して返す。
 - エラー整形層: 例外を Error ID 付きメッセージにマッピングし、仕様で定義した文字列を返す。
 
-依存方向は左から右へのみ（DBAPI → 翻訳 → クライアント → 結果/エラー）。ユーティリティ/定数は下位でのみ共有し、循環を禁止する。SQL パーサーは `SQLGlot` を使用し、`SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE/INDEX`、`WHERE`（比較/AND/OR/IN/BETWEEN/LIKE）、`ORDER BY`、`LIMIT/OFFSET`、INNER/LEFT 等価 JOIN（2 段まで）、`GROUP BY`+集計、`UNION ALL`、`HAVING` に対応し、`WHERE IN/EXISTS` や FROM サブクエリは先行実行で結果適用する。LIKE は `%`/`_` を `$regex` に変換し、大文字小文字は区別（ILIKE/正規表現リテラルは拡張項目）。
+依存方向は左から右へのみ（DBAPI → 翻訳 → クライアント → 結果/エラー）。ユーティリティ/定数は下位でのみ共有し、循環を禁止する。SQL パーサーは `SQLGlot` を使用し、`SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE/INDEX`、`WHERE`（比較/AND/OR/IN/BETWEEN/LIKE）、`ORDER BY`、`LIMIT/OFFSET`、INNER/LEFT 等価 JOIN（最大 3 段）、`GROUP BY`+集計+`HAVING`、`UNION ALL`、サブクエリ（`WHERE IN/EXISTS`/FROM サブクエリを先行実行）、ウィンドウ `ROW_NUMBER`（MongoDB 5+）に対応する。LIKE は `%`/`_` を `$regex` に変換し、大文字小文字は区別（ILIKE/正規表現リテラルは拡張項目）。
 
 ## 主要インターフェース（案）
 - `connect(uri: str, db_name: str, **kwargs) -> Connection`
@@ -40,15 +40,15 @@
 - `description` は列名と簡易型を返却する。`SELECT *` の列順はアルファベット順、明示列は記述順。JOIN 時の `SELECT *` は左→右テーブルのアルファベット順。
 - プレースホルダーは `%s` と `%(name)s` に対応（不足/余剰は [mdb][E4]）。
 - `autocommit` はデフォルト ON 相当で、`begin()` 呼び出し時のみセッションを張る（未対応環境では no-op）。
-- SQLAlchemy 方言を提供し、モジュール属性（apilevel/threadsafety/paramstyle=pyformat、スキーム `mongodb+dbapi://`）を設定する。Core の text() ベースで確認済み、Table/Column 互換と ORM CRUD は今後拡張、async dialect はロードマップ上で検討。
-- 拡張機能: サブクエリ（FROM サブクエリなど）/UNION/HAVING/非等価・多段 JOIN/ILIKE・正規表現リテラル/名前付きパラメータ/ウィンドウ関数の翻訳パスを追加し、Decimal/UUID/tz datetime など型変換のポリシーを明確化する。
-- 優先実装順: 1) SQLAlchemy Core 強化（Table/Column CRUD/DDL/Index）、2) ORM 最小 CRUD、3) async dialect（Core CRUD/DDL/Index を sync ラップで提供。将来は motor 等のネイティブ async を検討）、4) ウィンドウ関数（Mongo 5+ 前提）。
+- SQLAlchemy 方言を提供し、モジュール属性（apilevel/threadsafety/paramstyle=pyformat、スキーム `mongodb+dbapi://`）を設定する。Core の text()/Table/Column、DDL/Index、ORM 最小 CRUD（単一テーブル）を実通信で通す。async dialect も提供し、当面は sync 実装をスレッドプールでラップする。
+- 拡張機能: サブクエリ（WHERE IN/EXISTS、FROM サブクエリ先行実行）/UNION ALL/HAVING/多段 JOIN（最大 3 段）/ILIKE・正規表現リテラル/名前付きパラメータ/ROW_NUMBER を翻訳する。Decimal/UUID/tz datetime/Binary などの型変換を明示。
+- 優先実装順: 1) SQLAlchemy Core 強化（Table/Column CRUD/DDL/Index）、2) ORM 最小 CRUD、3) async dialect（Core CRUD/DDL/Index を sync ラップで提供。将来は motor 等のネイティブ async を検討）、4) ウィンドウ関数（Mongo 5+ 前提、ROW_NUMBER を `$setWindowFields` に変換）。
 
 ## async 方言の設計方針（概要）
 - API: SQLAlchemy 2.0 の async Engine/Connection (`create_async_engine`) から CRUD/DDL/Index を実行できるようにする。翻訳経路は sync と共通。
 - 実装方式: 当面は sync 実装をスレッドプールでラップし、非同期アプリから await 可能にする。高負荷時のスレッド数/接続数は利用者側で制御する前提。ネイティブ async（motor など）は将来検討。
 - トランザクション: ポリシーは sync と同じ。MongoDB 4.x 以降でのみ begin/commit/rollback を有効化し、3.6 では no-op。README に期待値を明示する。
-- 非対応: ORM/relationship、複雑なメタデータ API、statement cache、ウィンドウ関数（Mongo 5 未満は [mdb][E2]）。
+- 非対応: ORM/relationship、複雑なメタデータ API、statement cache。ウィンドウ関数は Mongo 5+ 前提で `$setWindowFields` に変換、5 未満は [mdb][E2]。
 
 ## 設定と環境
 - 環境変数（例）: `MONGODB_URI`（接続先 URI）、`MONGODB_DB`（デフォルト DB 名）。`.env.sample` は作成せず、必要なら `.env` を手元で用意する。
