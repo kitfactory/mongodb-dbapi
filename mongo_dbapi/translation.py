@@ -44,6 +44,8 @@ class QueryParts:
     unique: bool = False
     union_parts: List["QueryParts"] | None = None
     subqueries: dict[str, dict[str, Any]] | None = None
+    inline_token: str | None = None
+    inline_rows: list[dict[str, Any]] | None = None
 
 
 def preprocess_sql(sql: str, params: Sequence[Any] | Mapping[str, Any] | None) -> tuple[str, list[Any], list[str]]:
@@ -485,10 +487,22 @@ def parse_sql(sql: str, params: Sequence[Any] | Mapping[str, Any] | None = None)
 
 
 def _parse_select(expr: exp.Select, params_map: dict[str, Any], subqueries: dict[str, dict[str, Any]]) -> QueryParts:
-    table = expr.find(exp.Table)
-    if not table or not table.name:
-        raise_error("[mdb][E5]", "Failed to parse SQL")
-    collection = table.name
+    from_expr = expr.args.get("from_")
+    collection = None
+    inline_token = None
+    if from_expr:
+        if hasattr(from_expr, "this") and isinstance(from_expr.this, exp.Table) and from_expr.this.name:
+            collection = from_expr.this.name
+        elif hasattr(from_expr, "this") and isinstance(from_expr.this, (exp.Subquery, exp.Select)):
+            inline_token = _register_subquery(from_expr.this, params_map, subqueries, mode="from")
+        else:
+            raise_error("[mdb][E5]", "Failed to parse SQL")
+    if not collection and not inline_token:
+        table = expr.find(exp.Table)
+        if table and table.name:
+            collection = table.name
+        else:
+            raise_error("[mdb][E5]", "Failed to parse SQL")
     projection: List[str] | None = None
     if not expr.is_star:
         projection = [c.alias_or_name for c in expr.expressions]
@@ -519,13 +533,14 @@ def _parse_select(expr: exp.Select, params_map: dict[str, Any], subqueries: dict
             skip_val = int(expr.args["offset"].expression.this)
 
     return QueryParts(
-        operation="find",
-        collection=collection,
+        operation="from_subquery" if inline_token else "find",
+        collection=collection or "",
         filter=mongo_filter or {},
         projection=projection,
         sort=sort_items,
         limit=limit_val,
         skip=skip_val,
+        inline_token=inline_token,
     )
 
 

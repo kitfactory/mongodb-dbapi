@@ -292,3 +292,15 @@ def test_subquery_exists_as_boolean_gate():
     rows_none = cur.fetchall()
     assert rows_none == []
     conn.close()
+
+
+def test_from_subquery_select():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (1, "A"))
+    cur.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (2, "B"))
+    cur.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (3, "C"))
+    cur.execute("SELECT id, name FROM (SELECT id, name FROM users WHERE id >= %s) AS t WHERE id < %s ORDER BY id DESC", (2, 3))
+    rows = cur.fetchall()
+    assert rows == [(2, "B")]
+    conn.close()

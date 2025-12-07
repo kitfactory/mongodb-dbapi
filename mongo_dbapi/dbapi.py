@@ -154,6 +154,8 @@ class Connection:
     def _execute_parts(self, parts: QueryParts) -> CursorState:
         if parts.subqueries:
             parts = self._materialize_subqueries(parts)
+        if parts.operation == "from_subquery":
+            return self._execute_from_subquery(parts)
         if parts.operation == "find":
             return self._execute_find(parts)
         if parts.operation == "insert":
@@ -191,6 +193,12 @@ class Connection:
                 resolved[token] = [row[0] for row in (state.rows or [])]
             elif mode == "exists":
                 resolved[token] = bool(state.rows)
+            elif mode == "from":
+                cols = [c[0] for c in state.description or []] if state.description else []
+                rows_dicts = []
+                for row in state.rows or []:
+                    rows_dicts.append({cols[i]: row[i] for i in range(len(cols))})
+                resolved[token] = rows_dicts
             else:
                 resolved[token] = state.rows or []
 
@@ -210,7 +218,78 @@ class Connection:
             values=_replace(parts.values),
             update=_replace(parts.update),
             subqueries=None,
+            inline_token=None if (parts.inline_token and parts.inline_token in resolved) else parts.inline_token,
+            collection=_replace(parts.collection) if isinstance(parts.collection, dict) else parts.collection,
+            inline_rows=_replace(resolved.get(parts.inline_token)) if parts.inline_token else None,
         )
+
+    def _match_filter(self, doc: dict, flt: Any) -> bool:
+        if flt is None:
+            return True
+        if isinstance(flt, dict):
+            for key, val in flt.items():
+                if key == "$and":
+                    if not all(self._match_filter(doc, f) for f in val):
+                        return False
+                    continue
+                if key == "$or":
+                    if not any(self._match_filter(doc, f) for f in val):
+                        return False
+                    continue
+                if key == "$expr":
+                    # already reduced to literal truthy/falsey
+                    return bool(val.get("$literal"))
+                actual = doc.get(key)
+                if isinstance(val, dict):
+                    for op, expected in val.items():
+                        if op == "$in":
+                            if actual not in expected:
+                                return False
+                        elif op == "$gte":
+                            if not (actual >= expected):
+                                return False
+                        elif op == "$lte":
+                            if not (actual <= expected):
+                                return False
+                        elif op == "$gt":
+                            if not (actual > expected):
+                                return False
+                        elif op == "$lt":
+                            if not (actual < expected):
+                                return False
+                        elif op == "$ne":
+                            if actual == expected:
+                                return False
+                        elif op == "$regex":
+                            import re
+
+                            if not isinstance(actual, str):
+                                return False
+                            flags = re.I if val.get("$options") == "i" else 0
+                            if not re.match(expected, actual, flags):
+                                return False
+                        else:
+                            return False
+                else:
+                    if actual != val:
+                        return False
+            return True
+        return False
+
+    def _execute_from_subquery(self, parts: QueryParts) -> CursorState:
+        rows = parts.inline_rows or []
+        filtered = [r for r in rows if self._match_filter(r, parts.filter)]
+        if parts.sort:
+            for field, direction in reversed(parts.sort):
+                filtered.sort(key=lambda r, f=field: r.get(f), reverse=direction == -1)
+        if parts.skip:
+            filtered = filtered[parts.skip :]
+        if parts.limit:
+            filtered = filtered[: parts.limit]
+        columns = parts.projection or (sorted(filtered[0].keys()) if filtered else [])
+        result_rows = [tuple(_convert_value(r.get(c)) for c in columns) for r in filtered]
+        description = [(c, None, None, None, None, None, None) for c in columns] if columns else None
+        return CursorState(rows=result_rows, rowcount=len(result_rows), description=description)
 
     def _execute_find(self, parts: QueryParts) -> CursorState:
         proj = None

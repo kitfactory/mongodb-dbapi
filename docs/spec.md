@@ -69,6 +69,11 @@
 - 条件: `cursor.execute(sql)`
 - 振る舞い: サブクエリを先に実行し、先頭列の結果リストで `$in` を構築する。`EXISTS` はサブクエリ件数 > 0 なら真、0 件なら偽として評価する（非相関サブクエリのみサポート）。
 
+### 2.9. FROM サブクエリを先行実行して結果に対して外側の SELECT を適用する (F11)
+- 前提: `SELECT id, name FROM (SELECT id, name FROM users WHERE id >= 2) AS t WHERE id < 3`
+- 条件: `cursor.execute(sql)`
+- 振る舞い: FROM 句のサブクエリを先行実行し、得られた行をインラインビューとして保持した上で、外側の WHERE/ORDER/LIMIT/投影を適用する（非相関サブクエリのみサポート）。
+
 ## 3. DML 変換 (F3)
 ### 3.1. INSERT が insert_one に変換される (F3)
 - 前提: `INSERT INTO users (id, name) VALUES (1, 'Alice')`
