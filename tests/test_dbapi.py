@@ -12,6 +12,7 @@ import uuid
 
 MONGODB_URI = os.environ.get("MONGODB_URI", "mongodb://127.0.0.1:27018")
 MONGODB_DB = os.environ.get("MONGODB_DB", "mongo_dbapi_test")
+DBAPI_URI = "mongodb+dbapi://" + MONGODB_URI.split("://", 1)[1].rstrip("/")
 COLLECTION = "users"
 
 
@@ -21,9 +22,11 @@ def clean_db():
     db = conn._db  # noqa: SLF001
     db[COLLECTION].delete_many({})
     db["orders"].delete_many({})
+    db["addresses"].delete_many({})
     yield
     db[COLLECTION].delete_many({})
     db["orders"].delete_many({})
+    db["addresses"].delete_many({})
     conn.close()
 
 
@@ -106,6 +109,22 @@ def test_join_inner():
     conn.close()
 
 
+def test_join_two_hops():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    db = conn._db  # noqa: SLF001
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (id, name) VALUES (%s, %s)", (1, "Alice"))
+    db["orders"].insert_one({"id": 10, "user_id": 1, "total": 100})
+    db["addresses"].insert_one({"id": 5, "order_id": 10, "city": "Tokyo"})
+    cur.execute(
+        "SELECT u.id, a.city FROM users u JOIN orders o ON u.id = o.user_id JOIN addresses a ON o.id = a.order_id WHERE a.city = %s",
+        ("Tokyo",),
+    )
+    rows = cur.fetchall()
+    assert rows == [(1, "Tokyo")]
+    conn.close()
+
+
 def test_create_drop_index():
     conn = connect(MONGODB_URI, MONGODB_DB)
     cur = conn.cursor()
@@ -136,6 +155,19 @@ def test_limit_offset_with_order():
     conn.close()
 
 
+def test_group_by_having_sum():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (id, name, score) VALUES (%s, %s, %s)", (1, "A", 5))
+    cur.execute("INSERT INTO users (id, name, score) VALUES (%s, %s, %s)", (2, "A", 7))
+    cur.execute("INSERT INTO users (id, name, score) VALUES (%s, %s, %s)", (3, "B", 10))
+    cur.execute("INSERT INTO users (id, name, score) VALUES (%s, %s, %s)", (4, "B", 12))
+    cur.execute("SELECT name, SUM(score) AS total FROM users GROUP BY name HAVING total > %s ORDER BY name", (15,))
+    rows = cur.fetchall()
+    assert rows == [("B", 22)]
+    conn.close()
+
+
 def test_create_drop_table():
     conn = connect(MONGODB_URI, MONGODB_DB)
     cur = conn.cursor()
@@ -163,7 +195,7 @@ def test_datetime_and_objectid_roundtrip():
 
 
 def test_sqlalchemy_integration():
-    engine = create_engine("mongodb+dbapi://127.0.0.1:27018/mongo_dbapi_test")
+    engine = create_engine(f"{DBAPI_URI}/{MONGODB_DB}")
     with engine.begin() as conn:
         conn.execute(text("DELETE FROM users WHERE id = 99"))
         conn.execute(text("INSERT INTO users (id, name) VALUES (99, 'SA')"))
@@ -183,8 +215,24 @@ def test_named_params_and_union_all():
     conn.close()
 
 
+def test_delete_without_where_is_blocked():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    with pytest.raises(MongoDbApiError):
+        cur.execute("DELETE FROM users")
+    conn.close()
+
+
+def test_missing_named_param_raises():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    with pytest.raises(MongoDbApiError):
+        cur.execute("SELECT * FROM users WHERE id = %(id)s", {"other": 1})
+    conn.close()
+
+
 def test_sqlalchemy_core_table_crud():
-    engine = create_engine("mongodb+dbapi://127.0.0.1:27018/mongo_dbapi_test")
+    engine = create_engine(f"{DBAPI_URI}/{MONGODB_DB}")
     metadata = MetaData()
     users = Table("core_users", metadata, Column("id", Integer, primary_key=True), Column("name", String(50)))
     metadata.drop_all(engine)  # ensure clean
@@ -194,3 +242,26 @@ def test_sqlalchemy_core_table_crud():
         rows = conn.execute(select(users.c.id, users.c.name).where(users.c.id == 300)).all()
     assert rows == [(300, "Core")]
     metadata.drop_all(engine)
+
+
+def test_sqlalchemy_core_update_delete():
+    engine = create_engine(f"{DBAPI_URI}/{MONGODB_DB}")
+    metadata = MetaData()
+    users = Table("core_users2", metadata, Column("id", Integer, primary_key=True), Column("name", String(50)))
+    metadata.drop_all(engine)
+    metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(users.insert().values(id=1, name="Old"))
+        conn.execute(users.update().where(users.c.id == 1).values(name="New"))
+        conn.execute(users.delete().where(users.c.id == 1))
+        rows = conn.execute(select(users.c.id).where(users.c.id == 1)).all()
+    assert rows == []
+    metadata.drop_all(engine)
+
+
+def test_window_function_is_rejected():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    with pytest.raises(MongoDbApiError):
+        cur.execute("SELECT id, ROW_NUMBER() OVER (PARTITION BY name) FROM users")
+    conn.close()

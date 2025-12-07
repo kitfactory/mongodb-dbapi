@@ -32,6 +32,14 @@ pip install mongodb-dbapi
 PORT=27018 ./startdb.sh
 ```
 
+## MongoDB 4.4 (レプリカセット) の起動
+```bash
+# 既定ポート 27019。バンドル済み libssl1.1 を使い、スクリプト内で LD_LIBRARY_PATH を設定して起動します。
+PORT=27019 ./start4xdb.sh
+# 4.x でテストを走らせる場合
+MONGODB_URI=mongodb://127.0.0.1:27019 MONGODB_DB=mongo_dbapi_test .venv/bin/pytest -q
+```
+
 ## 利用例
 ```python
 from mongo_dbapi import connect
@@ -65,5 +73,5 @@ MONGODB_URI=mongodb://127.0.0.1:27018 MONGODB_DB=mongo_dbapi_test .venv/bin/pyte
 - スコープ: Core の text() ベースで動作確認済み。Core の Table/Column 互換強化と ORM CRUD は今後拡張予定。async dialect はロードマップで検討中。
 
 ## 補足
-- MongoDB 3.6 などトランザクション未対応環境では `begin/commit/rollback` を no-op の成功扱いとします。
+- MongoDB 3.6 などトランザクション未対応環境では `begin/commit/rollback` を no-op の成功扱いとします。4.x 以降（レプリカセット）ではセッションが有効で、同梱 4.4 で全テスト通過済みです。
 - エラーメッセージは `docs/spec.md` に定義された固定文字列です。ログは DEBUG 時のみ出力し、INFO では出しません。

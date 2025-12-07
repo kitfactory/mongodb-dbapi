@@ -33,6 +33,14 @@ pip install mongodb-dbapi
 PORT=27018 ./startdb.sh
 ```
 
+## Start local MongoDB 4.4 (replica set, bundled)
+```bash
+# Default port 27019; uses bundled libssl1.1. LD_LIBRARY_PATH is set inside the script for mongod.
+PORT=27019 ./start4xdb.sh
+# Run tests against 4.x
+MONGODB_URI=mongodb://127.0.0.1:27019 MONGODB_DB=mongo_dbapi_test .venv/bin/pytest -q
+```
+
 ## Usage example
 ```python
 from mongo_dbapi import connect
@@ -66,5 +74,5 @@ MONGODB_URI=mongodb://127.0.0.1:27018 MONGODB_DB=mongo_dbapi_test .venv/bin/pyte
 ```
 
 ## Notes
-- Transactions on MongoDB 3.6 are treated as no-op; 4.x+ uses real sessions.
+- Transactions on MongoDB 3.6 are treated as no-op; 4.x+ (replica set) uses real sessions and the bundled 4.4 binary passes all tests.
 - Error messages are fixed strings per `docs/spec.md`. Keep logs at DEBUG only (default INFO is silent).

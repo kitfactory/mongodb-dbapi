@@ -1,9 +1,9 @@
 # mongo-dbapi 仕様
 
 ## 前提: サポートする SQL 構文（拡張後）
-- 対応: `SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE`（コレクション作成/削除）、`CREATE/DROP INDEX`、`WHERE` の比較 (`=`/`<>`/`>`/`<`/`<=`/`>=`)、`AND`、`OR`、`IN`、`BETWEEN`、`LIKE`（`%`/`_` を `$regex` に変換）、`ORDER BY`、`LIMIT`、`OFFSET`、INNER/LEFT JOIN の等価結合（複合キー、最大 2 段）、`GROUP BY` + 集約（COUNT/SUM/AVG/MIN/MAX）
-- 非対応: サブクエリ（将来対応予定）、非等価 JOIN、フル/右外部 JOIN、ウィンドウ関数、UNION、HAVING、正規表現リテラル、ILIKE。
-- プレースホルダー: `%s` の位置パラメータのみ対応。名前付きプレースホルダーは未対応。
+- 対応: `SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE`（コレクション作成/削除）、`CREATE/DROP INDEX`、`WHERE` の比較 (`=`/`<>`/`>`/`<`/`<=`/`>=`)、`AND`、`OR`、`IN`、`BETWEEN`、`LIKE`（`%`/`_` を `$regex` に変換）、`ILIKE`、正規表現リテラル、`ORDER BY`、`LIMIT`、`OFFSET`、INNER/LEFT JOIN の等価結合（複合キー、最大 3 段）、`GROUP BY` + 集約（COUNT/SUM/AVG/MIN/MAX）+ `HAVING`、`UNION ALL`、サブクエリ（`WHERE IN/EXISTS`、`FROM (SELECT ...)`）
+- 非対応: 非等価 JOIN、フル/右外部 JOIN、ウィンドウ関数（Mongo 5 未満）、`UNION`（重複除去）。
+- プレースホルダー: `%s` と `%(name)s` の両方に対応（不足/余剰は `[mdb][E4]`）。
 - `SELECT *` 時のフィールド順: コレクションのフィールド名をアルファベット順で返す。明示列指定時は SQL 記述順で返す。JOIN 時の `SELECT *` は左テーブル→右テーブルの順でアルファベット順。
 - パーサー: SQLGlot を使用し、将来のサブクエリ対応を可能にする。
 
@@ -96,10 +96,10 @@
 - 条件: `cursor.execute(sql, params)`
 - 振る舞い: Error ID `[mdb][E4] Parameter count mismatch` を送出する
 
-### 4.3. 名前付きプレースホルダーは未対応として扱う (F4, F5)
-- 前提: `SELECT * FROM users WHERE id = %(id)s`
+### 4.3. 名前付きプレースホルダーに dict パラメータを適用する (F4)
+- 前提: `SELECT * FROM users WHERE id = %(id)s` とパラメータ `{"id": 1}`
 - 条件: `cursor.execute(sql, params)`
-- 振る舞い: Error ID `[mdb][E2] Unsupported SQL construct: NAMED_PARAMETER` を送出する
+- 振る舞い: フィルタ `{"id": 1}` を生成し `find` を実行する（不足/余剰キーは `[mdb][E4]`）
 
 ## 5. 例外/エラーメッセージ (F5)
 - Error ID とメッセージは下表のとおり。実装は文字列を完全一致で返す。
@@ -117,11 +117,11 @@
 
 ## 6. トランザクション/セッション (F6)
 ### 6.1. begin/commit/rollback が Mongo セッションをラップする (F6)
-- 前提: 接続がレプリカセット/トランザクション対応クラスタに接続済み
+- 前提: 接続がレプリカセット/トランザクション対応クラスタ（例: MongoDB 4.x 以降）に接続済み
 - 条件: `connection.begin()`, `connection.commit()`, `connection.rollback()` を呼ぶ
 - 振る舞い: MongoDB セッションを開始/コミット/アボートし、失敗時は [mdb][E5] で包んで送出する
 
-### 6.2. サーバーがトランザクション非対応の場合、開始前にエラーを返す (F6, F5)
+### 6.2. サーバーがトランザクション非対応の場合は no-op で成功扱いにする (F6)
 - 前提: 接続先がスタンドアロン構成またはトランザクション未対応バージョン（例: MongoDB 3.6）
 - 条件: `connection.begin()` を呼ぶ
 - 振る舞い: エラーは送出せず、内部的にはセッションを張らずに no-op とし、後続の `commit`/`rollback` も成功扱いで返す
