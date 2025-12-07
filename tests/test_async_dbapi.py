@@ -45,3 +45,15 @@ def test_async_unsupported_sql_raises():
         await conn.close()
 
     asyncio.run(_run())
+
+
+def test_async_param_mismatch_raises():
+    async def _run():
+        conn = await connect_async(MONGODB_URI, MONGODB_DB)
+        cur = await conn.cursor()
+        with pytest.raises(MongoDbApiError) as exc:
+            await cur.execute("SELECT * FROM users WHERE id = %s", (1, 2))
+        assert "[mdb][E4]" in str(exc.value)
+        await conn.close()
+
+    asyncio.run(_run())

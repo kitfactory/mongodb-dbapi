@@ -95,6 +95,21 @@ def test_parameter_extra_raises():
     conn.close()
 
 
+def test_named_params_extra_raises():
+    conn = connect(MONGODB_URI, MONGODB_DB)
+    cur = conn.cursor()
+    with pytest.raises(MongoDbApiError) as exc:
+        cur.execute("SELECT * FROM users WHERE id = %(id)s", {"id": 1, "other": 2})
+    assert "[mdb][E4]" in str(exc.value)
+    conn.close()
+
+
+def test_connect_invalid_uri_raises():
+    with pytest.raises(MongoDbApiError) as exc:
+        connect("", MONGODB_DB)
+    assert "[mdb][E1]" in str(exc.value)
+
+
 def test_or_query():
     conn = connect(MONGODB_URI, MONGODB_DB)
     cur = conn.cursor()
@@ -365,6 +380,21 @@ def test_sqlalchemy_core_join_and_union_all():
         union_stmt = select(users.c.id).where(users.c.id == 1).union_all(select(users.c.id).where(users.c.id == 2))
         union_rows = sorted(conn.execute(union_stmt).all())
         assert union_rows == [(1,), (2,)]
+    metadata.drop_all(engine)
+
+
+def test_sqlalchemy_union_distinct_is_rejected():
+    engine = create_engine(f"{DBAPI_URI}/{MONGODB_DB}")
+    metadata = MetaData()
+    users = Table("core_users5", metadata, Column("id", Integer, primary_key=True))
+    metadata.drop_all(engine)
+    metadata.create_all(engine)
+    with engine.begin() as conn:
+        conn.execute(users.insert(), [{"id": 1}, {"id": 2}])
+        with pytest.raises(Exception) as exc:
+            stmt = select(users.c.id).where(users.c.id == 1).union(select(users.c.id).where(users.c.id == 2))
+            conn.execute(stmt).all()
+    assert "Unsupported SQL construct" in str(exc.value)
     metadata.drop_all(engine)
 
 
