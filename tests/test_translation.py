@@ -168,6 +168,19 @@ def test_window_row_number_with_partition_and_order():
     assert parts.uses_window is True
     assert parts.operation == "aggregate"
 
+
+def test_window_rank_and_dense_rank_parse():
+    parts_rank = parse_sql(
+        "SELECT user_id, RANK() OVER (PARTITION BY user_id ORDER BY created_at) AS rnk FROM events"
+    )
+    assert parts_rank.uses_window is True
+    assert any("$setWindowFields" in stage for stage in parts_rank.pipeline or [])
+    parts_dense = parse_sql(
+        "SELECT user_id, DENSE_RANK() OVER (ORDER BY created_at) AS drk FROM events"
+    )
+    assert parts_dense.uses_window is True
+    assert any("$setWindowFields" in stage for stage in parts_dense.pipeline or [])
+
 def test_param_shortage_rejected():
     with pytest.raises(MongoDbApiError) as exc:
         parse_sql("SELECT * FROM users WHERE id = %s", params=None)

@@ -694,13 +694,20 @@ def _parse_window_select(expr: exp.Select, params_map: dict[str, Any], subquerie
         where_filter = _condition_to_filter(expr.args["where"].this, params_map, subqueries)
     window_expr = None
     output_alias = None
+    window_func = None
     base_columns: list[tuple[str, str]] = []
     for item in expr.expressions:
         target = item.this if isinstance(item, exp.Alias) else item
         alias = item.alias_or_name
-        if isinstance(target, exp.Window) and isinstance(target.this, exp.RowNumber):
+        if isinstance(target, exp.Window) and isinstance(target.this, (exp.RowNumber, exp.Rank, exp.DenseRank)):
             window_expr = target
             output_alias = alias
+            if isinstance(target.this, exp.RowNumber):
+                window_func = "$documentNumber"
+            elif isinstance(target.this, exp.Rank):
+                window_func = "$rank"
+            elif isinstance(target.this, exp.DenseRank):
+                window_func = "$denseRank"
         elif isinstance(target, exp.Column):
             base_columns.append((_field_name(target, params_map), alias))
         else:
@@ -721,7 +728,7 @@ def _parse_window_select(expr: exp.Select, params_map: dict[str, Any], subquerie
             fld = _field_name(e.this, params_map)
             direction = -1 if e.args.get("desc") else 1
             sort_doc[fld] = direction
-    window_output = {output_alias: {"$documentNumber": {}}}
+    window_output = {output_alias: {window_func: {}}}
     window_doc: dict[str, Any] = {"output": window_output}
     if partition_expr:
         window_doc["partitionBy"] = partition_expr
