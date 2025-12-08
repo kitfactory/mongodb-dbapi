@@ -9,7 +9,7 @@ Purpose: let existing DB-API / SQLAlchemy Core / FastAPI code treat MongoDB as �
 
 ## Features
 - DBAPI-like `Connection`/`Cursor`
-- SQL → Mongo: `SELECT/INSERT/UPDATE/DELETE`, `CREATE/DROP TABLE/INDEX` (ASC/DESC, UNIQUE, composite), `WHERE` (comparisons/`AND`/`OR`/`IN`/`BETWEEN`/`LIKE`→`$regex`/`ILIKE`/regex literal), `ORDER BY`, `LIMIT/OFFSET`, INNER/LEFT JOIN (equijoin, composite keys up to 3 hops), `GROUP BY` + aggregates (COUNT/SUM/AVG/MIN/MAX) + `HAVING`, `UNION ALL`, subqueries (`WHERE IN/EXISTS`, `FROM (SELECT ...)`), `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` on MongoDB 5.x+
+- SQL → Mongo: `SELECT/INSERT/UPDATE/DELETE`, `CREATE/DROP TABLE/INDEX` (ASC/DESC, UNIQUE, composite), `WHERE` (comparisons/`AND`/`OR`/`IN`/`BETWEEN`/`LIKE`→`$regex`/`ILIKE`/regex literal), `ORDER BY`, `LIMIT/OFFSET`, INNER/LEFT JOIN (equijoin, composite keys up to 3 hops, projection/alias), `GROUP BY` + aggregates (COUNT/SUM/AVG/MIN/MAX) + `HAVING` (aggregate aliases), simple CASE aggregates (`SUM(CASE WHEN ... THEN ... ELSE ... END)`), `UNION ALL`, subqueries (`WHERE IN/EXISTS`, `FROM (SELECT ...)`), window functions `ROW_NUMBER`/`RANK`/`DENSE_RANK` on MongoDB 5.x+
 - `%s` positional and `%(name)s` named parameters; unsupported constructs raise Error IDs (e.g. `[mdb][E2]`)
 - Error IDs for common failures: invalid URI, unsupported SQL, unsafe DML without WHERE, parse errors, connection/auth failures
 - DBAPI fields: `rowcount`, `lastrowid`, `description` (column order: explicit order, or alpha for `SELECT *`; JOIN uses left→right)
@@ -79,7 +79,7 @@ print(cur.rowcount)    # 1
 ## Async (FastAPI/Core) - beta
 - **Current implementation wraps the sync driver in a thread pool** (native async driver is planned). Provided via `mongo_dbapi.async_dbapi.connect_async`. API mirrors sync Core: awaitable CRUD/DDL/Index, JOIN/UNION ALL/HAVING/IN/EXISTS/FROM subquery.
 - Transactions: effective on MongoDB 4.x+ only; 3.6 is no-op. Be mindful that MongoDB transactions differ from RDBMS in locking/perf; avoid heavy transactional workloads.
-- Window: `ROW_NUMBER` is available on MongoDB 5.x+; earlier versions return `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION`.
+- Window: `ROW_NUMBER`/`RANK`/`DENSE_RANK` are available on MongoDB 5.x+; earlier versions return `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION`.
 - FastAPI example:
 ```python
 from fastapi import FastAPI, Depends
@@ -110,6 +110,10 @@ async def get_user(user_id: str, conn: AsyncConnection = Depends(get_conn)):
 PORT=27018 ./startdb.sh  # if 27017 is taken
 MONGODB_URI=mongodb://127.0.0.1:27018 MONGODB_DB=mongo_dbapi_test .venv/bin/pytest -q
 ```
+
+## Tutorials
+- English: `docs/tutorial.md`
+- 日本語: `docs/tutorial_ja.md`
 
 ## Notes
 - Transactions on MongoDB 3.6 are treated as no-op; 4.x+ (replica set) uses real sessions and the bundled 4.4 binary passes all tests.

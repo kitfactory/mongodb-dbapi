@@ -62,11 +62,11 @@ print(cur.rowcount)    # 1
 ## 対応している SQL
 - ステートメント: `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE/DROP TABLE`, `CREATE/DROP INDEX`
 - WHERE: 比較演算子（`=`, `<>`, `>`, `<`, `<=`, `>=`）、`AND`、`OR`、`IN`、`BETWEEN`、`LIKE`（`%`/`_` → `$regex`）、`ILIKE`、正規表現リテラル `/.../`
-- JOIN: INNER/LEFT 等価結合（複合キー、最大 3 段）
-- 集計: `GROUP BY` + 集計（COUNT/SUM/AVG/MIN/MAX）+ `HAVING`
+- JOIN: INNER/LEFT 等価結合（複合キー、最大 3 段、投影/alias 対応）
+- 集計: `GROUP BY` + 集計（COUNT/SUM/AVG/MIN/MAX）+ `HAVING`（集計 alias 解決）＋簡易 CASE 集計（`SUM(CASE WHEN ... THEN ... END)`）
 - サブクエリ: `WHERE IN/EXISTS` と `FROM (SELECT ...)`（非相関のみ、先行実行）
 - 集合: `UNION ALL`
-- ウィンドウ: `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)`（MongoDB 5.x+、それ未満は `[mdb][E2]`）
+- ウィンドウ: `ROW_NUMBER`/`RANK`/`DENSE_RANK`（MongoDB 5.x+、それ未満は `[mdb][E2]`）
 - `ORDER BY`, `LIMIT`, `OFFSET`
 - 未対応: 非等価 JOIN、FULL/RIGHT OUTER、`UNION`（重複除去）、`ROW_NUMBER` 以外のウィンドウ関数、相関サブクエリ、ORM リレーション
 
@@ -79,12 +79,12 @@ MONGODB_URI=mongodb://127.0.0.1:27018 MONGODB_DB=mongo_dbapi_test .venv/bin/pyte
 ## SQLAlchemy
 - DBAPI モジュール属性: `apilevel="2.0"`, `threadsafety=1`, `paramstyle="pyformat"`（方言実装を前提）
 - 接続スキーム: `mongodb+dbapi://...` の dialect を提供（sync/async スレッドプール）
-- スコープ: Core text()/Table/Column の CRUD/DDL/Index、ORM 最小 CRUD（単一テーブル）、JOIN/UNION ALL/HAVING/サブクエリ/ROW_NUMBER を実通信で確認済み。async dialect は Core CRUD/DDL/Index をラップ（ネイティブ async は将来検討）。
+- スコープ: Core text()/Table/Column の CRUD/DDL/Index、ORM 最小 CRUD（単一テーブル）、JOIN/UNION ALL/HAVING/サブクエリ/ROW_NUMBER/RANK/DENSE_RANK を実通信で確認済み。async dialect は Core CRUD/DDL/Index をラップ（ネイティブ async は将来検討）。
 
 ## Async (FastAPI/Core) - ベータ
 - `mongo_dbapi.async_dbapi.connect_async` で非同期ラッパーを提供。**現時点では sync をスレッドプールでラップする実装（ネイティブ async は将来検討）**。同期と同じ Core 機能（CRUD/DDL/Index、JOIN/UNION ALL/HAVING/IN/EXISTS/FROM サブクエリ）を await で実行可能。
 - トランザクション: MongoDB 4.x 以降で有効。3.6 は no-op。RDB とロック/性能が異なるため重いトランザクション用途は非推奨。
-- ウィンドウ: `ROW_NUMBER` は MongoDB 5.x+ のみ対応。それ未満は `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION`。
+- ウィンドウ: `ROW_NUMBER`/`RANK`/`DENSE_RANK` は MongoDB 5.x+ のみ対応。それ未満は `[mdb][E2] Unsupported SQL construct: WINDOW_FUNCTION`。
 - FastAPI 例:
 ```python
 from fastapi import FastAPI, Depends
@@ -107,12 +107,16 @@ async def get_user(user_id: str, conn: AsyncConnection = Depends(get_conn)):
 - 制限: async ORM/relationship、statement cache は対象外。内部はスレッドプールのため高負荷時はスレッド/接続数に注意。
 
 ## 保証範囲と制約
-- 実機で安定確認済み: 単一コレクション CRUD、WHERE/ORDER/LIMIT/OFFSET、INNER/LEFT 等価 JOIN（最大 3 段）、GROUP BY + 集計 + HAVING、サブクエリ（WHERE IN/EXISTS, FROM (SELECT ...)), UNION ALL、`ROW_NUMBER()`（MongoDB 5.x+）
+- 実機で安定確認済み: 単一コレクション CRUD、WHERE/ORDER/LIMIT/OFFSET、INNER/LEFT 等価 JOIN（最大 3 段）、GROUP BY + 集計 + HAVING、サブクエリ（WHERE IN/EXISTS, FROM (SELECT ...)), UNION ALL、`ROW_NUMBER`/`RANK`/`DENSE_RANK`（MongoDB 5.x+）
 - 非対応/制約: 非等価 JOIN、FULL/RIGHT OUTER、重複除去 `UNION`、`ROW_NUMBER` 以外のウィンドウ関数、相関サブクエリ、ORM リレーション。async はスレッドプール実装。
 
 ## 補足
 - MongoDB 3.6 などトランザクション未対応環境では `begin/commit/rollback` を no-op の成功扱いとします。4.x 以降（レプリカセット）ではセッションが有効で、同梱 4.4 で全テスト通過済みです。
 - エラーメッセージは `docs/spec.md` に定義された固定文字列です。ログは DEBUG 時のみ出力し、INFO では出しません。
+
+## チュートリアル
+- English: `docs/tutorial.md`
+- 日本語: `docs/tutorial_ja.md`
 
 ## License
 MIT License（`LICENSE` を参照）。無保証ですが商用利用を含め自由に利用できます。
