@@ -1,4 +1,4 @@
-# mongo-dbapi アーキテクチャ
+# dbapi-mongodb アーキテクチャ
 
 ## レイヤー構造と依存方向
 - DBAPI ファサード層: `connect()`・接続/カーソルオブジェクトを公開。外部から唯一の入口。→ 翻訳層・Mongo クライアント層に依存。
@@ -7,7 +7,7 @@
 - 結果整形層: `pymongo` の返却値を DBAPI 互換の行タプル/カウントに整形。JOIN 時は `$lookup` の結果をフラット化して返す。
 - エラー整形層: 例外を Error ID 付きメッセージにマッピングし、仕様で定義した文字列を返す。
 
-依存方向は左から右へのみ（DBAPI → 翻訳 → クライアント → 結果/エラー）。ユーティリティ/定数は下位でのみ共有し、循環を禁止する。SQL パーサーは `SQLGlot` を使用し、`SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE/INDEX`、`WHERE`（比較/AND/OR/IN/BETWEEN/LIKE）、`ORDER BY`、`LIMIT/OFFSET`、INNER/LEFT 等価 JOIN（最大 3 段）、`GROUP BY`+集計+`HAVING`、`UNION ALL`、サブクエリ（`WHERE IN/EXISTS`/FROM サブクエリを先行実行）、ウィンドウ `ROW_NUMBER`（MongoDB 5+）に対応する。LIKE は `%`/`_` を `$regex` に変換し、大文字小文字は区別（ILIKE/正規表現リテラルは拡張項目）。
+依存方向は左から右へのみ（DBAPI → 翻訳 → クライアント → 結果/エラー）。ユーティリティ/定数は下位でのみ共有し、循環を禁止する。SQL パーサーは `SQLGlot` を使用し、`SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE/INDEX`、`WHERE`（比較/AND/OR/IN/BETWEEN/LIKE）、`ORDER BY`、`LIMIT/OFFSET`、INNER/LEFT 等価 JOIN（最大 3 段）、`GROUP BY`+集計+`HAVING`、`UNION ALL`、サブクエリ（`WHERE IN/EXISTS`/FROM サブクエリを先行実行）、ウィンドウ `ROW_NUMBER`（MongoDB 5+）に対応する。LIKE は `%`/`_` を `$regex` に変換し、大文字小文字は区別（ILIKE/正規表現リテラルは拡張項目）。P5 以降で JOIN 投影/alias 解決、CASE 集計、HAVING 集計 alias、追加ウィンドウ関数の拡張を検討する。
 
 ## 主要インターフェース（案）
 - `connect(uri: str, db_name: str, **kwargs) -> Connection`
@@ -41,8 +41,8 @@
 - プレースホルダーは `%s` と `%(name)s` に対応（不足/余剰は [mdb][E4]）。
 - `autocommit` はデフォルト ON 相当で、`begin()` 呼び出し時のみセッションを張る（未対応環境では no-op）。
 - SQLAlchemy 方言を提供し、モジュール属性（apilevel/threadsafety/paramstyle=pyformat、スキーム `mongodb+dbapi://`）を設定する。Core の text()/Table/Column、DDL/Index、ORM 最小 CRUD（単一テーブル）を実通信で通す。async dialect も提供し、当面は sync 実装をスレッドプールでラップする。
-- 拡張機能: サブクエリ（WHERE IN/EXISTS、FROM サブクエリ先行実行）/UNION ALL/HAVING/多段 JOIN（最大 3 段）/ILIKE・正規表現リテラル/名前付きパラメータ/ROW_NUMBER を翻訳する。Decimal/UUID/tz datetime/Binary などの型変換を明示。
-- 優先実装順: 1) SQLAlchemy Core 強化（Table/Column CRUD/DDL/Index）、2) ORM 最小 CRUD、3) async dialect（Core CRUD/DDL/Index を sync ラップで提供。将来は motor 等のネイティブ async を検討）、4) ウィンドウ関数（Mongo 5+ 前提、ROW_NUMBER を `$setWindowFields` に変換）。
+- 拡張機能: サブクエリ（WHERE IN/EXISTS、FROM サブクエリ先行実行）/UNION ALL/HAVING/多段 JOIN（最大 3 段）/ILIKE・正規表現リテラル/名前付きパラメータ/ROW_NUMBER を翻訳する。Decimal/UUID/tz datetime/Binary などの型変換を明示。P5 以降で JOIN 投影/alias、CASE 集計、HAVING 集計 alias、基本ウィンドウ関数拡張を検討する。
+- 優先実装順: 1) SQLAlchemy Core 強化（Table/Column CRUD/DDL/Index）、2) ORM 最小 CRUD、3) async dialect（Core CRUD/DDL/Index を sync ラップで提供。将来は motor 等のネイティブ async を検討）、4) ウィンドウ関数（Mongo 5+ 前提、ROW_NUMBER を `$setWindowFields` に変換）、5) JOIN/CASE/HAVING alias 強化、6) 基本ウィンドウ関数拡張。
 
 ## async 方言の設計方針（概要）
 - API: SQLAlchemy 2.0 の async Engine/Connection (`create_async_engine`) から CRUD/DDL/Index を実行できるようにする。翻訳経路は sync と共通。

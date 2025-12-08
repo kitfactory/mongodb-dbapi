@@ -1,7 +1,8 @@
-# mongo-dbapi 仕様
+# dbapi-mongodb 仕様
 
 ## 前提: サポートする SQL 構文（拡張後）
 - 対応: `SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE`（コレクション作成/削除）、`CREATE/DROP INDEX`、`WHERE` の比較 (`=`/`<>`/`>`/`<`/`<=`/`>=`)、`AND`、`OR`、`IN`、`BETWEEN`、`LIKE`（`%`/`_` を `$regex` に変換）、`ILIKE`、正規表現リテラル、`ORDER BY`、`LIMIT`、`OFFSET`、INNER/LEFT JOIN の等価結合（複合キー、最大 3 段）、`GROUP BY` + 集約（COUNT/SUM/AVG/MIN/MAX）+ `HAVING`、`UNION ALL`、サブクエリ（`WHERE IN/EXISTS`、`FROM (SELECT ...)`）、`ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)`（MongoDB 5.x+）
+- 強化予定（P5/P6）: JOIN 投影/alias 解決の強化、CASE を含む集計 (`SUM(CASE WHEN ... THEN ... ELSE ... END)`)、HAVING での集計 alias 解決、ROW_NUMBER 以外の基本ウィンドウ関数（MongoDB 5+ 前提）の検討。
 - 非対応: 非等価 JOIN、フル/右外部 JOIN、`ROW_NUMBER` 以外のウィンドウ関数、MongoDB 5 未満でのウィンドウ関数、`UNION`（重複除去）。
 - プレースホルダー: `%s` と `%(name)s` の両方に対応（不足/余剰は `[mdb][E4]`）。
 - `SELECT *` 時のフィールド順: コレクションのフィールド名をアルファベット順で返す。明示列指定時は SQL 記述順で返す。JOIN 時の `SELECT *` は左テーブル→右テーブルの順でアルファベット順。
@@ -47,7 +48,7 @@
 ### 2.4. INNER/LEFT JOIN（等価結合）をサポートする (F2, F8)
 - 前提: `SELECT u.id, o.name FROM users u JOIN orders o ON u.id = o.user_id`
 - 条件: `cursor.execute(sql)`
-- 振る舞い: 基底テーブルから `$lookup` で結合し、JOIN キーが一致する行を返す。LEFT JOIN の場合は右側が欠損しても返す。JOIN は最大 3 段まで、結合条件は等価のみ。
+- 振る舞い: 基底テーブルから `$lookup` で結合し、JOIN キーが一致する行を返す。LEFT JOIN の場合は右側が欠損しても返す。JOIN は最大 3 段まで、結合条件は等価のみ。JOIN 先の列は別名を含めて投影できるようにする（P5 強化項目）。
 
 ### 2.5. LIKE/BETWEEN/OR をサポートする (F2, F8)
 - 前提: `LIKE '%foo%'`, `BETWEEN 1 AND 10`, `OR` 条件を含む SELECT
@@ -62,7 +63,7 @@
 ### 2.7. GROUP BY と集計関数をサポートする (F2, F8)
 - 前提: `SELECT status, COUNT(*) FROM orders GROUP BY status`
 - 条件: `cursor.execute(sql)`
-- 振る舞い: `$group` に変換し、集計結果を返す（COUNT/SUM/AVG/MIN/MAX をサポート）。HAVING は GROUP 結果に対する比較/AND/OR/IN/BETWEEN/LIKE を `$match` として適用し、非集計列のみの HAVING は `[mdb][E2]`。
+- 振る舞い: `$group` に変換し、集計結果を返す（COUNT/SUM/AVG/MIN/MAX をサポート）。HAVING は GROUP 結果に対する比較/AND/OR/IN/BETWEEN/LIKE を `$match` として適用し、非集計列のみの HAVING は `[mdb][E2]`。集計 alias（例: `HAVING SUM(total) >= 100`）を解決できるよう強化する（P5）。
 
 ### 2.8. WHERE IN/EXISTS のサブクエリを先行実行して適用する (F11)
 - 前提: `SELECT id FROM users WHERE id IN (SELECT id FROM users WHERE score >= 10)` または `WHERE EXISTS (SELECT 1 FROM users WHERE active = true)`
@@ -200,3 +201,5 @@
 - P2: ORM 最小 CRUD（単一テーブル相当の add/get/select/update/delete。PK を `_id` にマッピングし、リレーション/JOIN は当面対象外）  
 - P3: async dialect（Core CRUD/DDL/Index を async でラップ。トランザクション方針は同期と同じ。実装はスレッドプールラップをベースとし、ネイティブ async は将来検討）  
 - P4: Mongo 5+ 拡張（低優先度。`ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` を `$setWindowFields` で対応。Mongo 5.0 未満は [mdb][E2]。その他のウィンドウ関数は非対応。7.x で動作確認済み）
+- P5: JOIN 投影/alias 強化、CASE 集計（`SUM(CASE WHEN ... THEN ... END)`）、HAVING で集計 alias を解決。JOIN + WHERE/HAVING の alias 解決を強化する。
+- P6: ウィンドウ関数拡張（ROW_NUMBER 以外の基本ウィンドウ関数を検討。MongoDB 5+ 前提）

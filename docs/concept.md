@@ -1,4 +1,4 @@
-# mongo-dbapi コンセプト
+# dbapi-mongodb コンセプト
 
 Python から MongoDB を SQL 風に扱うための DBAPI ライブラリ。`pymongo` に依存し、SQL 文を Mongo クエリへ変換して返すことで、既存の RDB アプリケーション移行を支援する。
 
@@ -22,6 +22,10 @@ Python から MongoDB を SQL 風に扱うための DBAPI ライブラリ。`pym
 | F10 | SQLAlchemy 対応 | DBAPI モジュール属性と dialect を提供し、SQLAlchemy から利用可能にする。 | F1〜F9 | Phase3 |
 | F11 | 高度な SQL 対応 | サブクエリ、UNION、HAVING、非等価/多段 JOIN、ウィンドウ関数、ILIKE/正規表現リテラル、名前付きパラメータ対応。 | F2, F8 | Phase4 |
 | F12 | 型対応拡張 | Decimal/UUID/タイムゾーン付き datetime 等の型変換ポリシー明確化と実装。 | F2 | Phase4 |
+| F13 | JOIN 投影/alias 強化 | JOIN 先の列をそのまま/別名で投影可能にし、JOIN + WHERE/HAVING で alias 解決を安定化。 | F8 | Phase5 |
+| F14 | CASE を含む集計 | `SUM(CASE WHEN ... THEN ... ELSE ... END)` など簡易な条件付き集計を `$cond` でサポート。 | F8 | Phase5 |
+| F15 | HAVING で集計 alias | `HAVING SUM(total) >= 100` など集計 alias を HAVING で解決できるようにする。 | F8 | Phase5 |
+| F16 | ウィンドウ関数拡張 | `ROW_NUMBER()` を基点に、基本的なウィンドウ関数サポートを拡張する（MongoDB 5+ 前提）。 | F11 | Phase6 |
 
 ## 機能詳細メモ
 - MVP では CRUD とパラメータバインドを優先し、SQL パーサーは限定構文（簡易 WHERE, LIMIT, ORDER BY）に絞る。
@@ -35,6 +39,8 @@ Python から MongoDB を SQL 風に扱うための DBAPI ライブラリ。`pym
   - P2: ORM 最小 CRUD（単一テーブル相当、PK→`_id` マッピング、P1 の型/パラメータを流用）  
   - P3: async dialect（Core CRUD/DDL/Index を async 化、トランザクション方針は同じ）  
   - P4: Mongo 5+ 前提のウィンドウ関数対応（`ROW_NUMBER` など）
+  - P5: JOIN 投影/alias 強化、CASE 集計、HAVING 集計 alias 対応（SQL 移植時の詰まりポイント解消）
+  - P6: ウィンドウ関数拡張（ROW_NUMBER 以外の基本関数の検討）
 - トランザクションは MongoDB のレプリカセット/トランザクション対応クラスタを前提（Phase2）。
 - MongoDB のバージョン/構成でトランザクションが未サポートの場合は実行前に検出し、明示的にエラー返却する。
 - SQL サポート範囲（現状）: `SELECT/INSERT/UPDATE/DELETE`、`CREATE/DROP TABLE`、`CREATE/DROP INDEX`、`WHERE`（比較/`AND`/`OR`/`IN`/`BETWEEN`/`LIKE`）、`ORDER BY`、`LIMIT/OFFSET`、INNER/LEFT 等価 JOIN（複合キー/2 段）、`GROUP BY` + 集計、`UNION ALL`、`HAVING`。
