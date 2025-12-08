@@ -119,6 +119,13 @@ MONGODB_URI=mongodb://127.0.0.1:27018 MONGODB_DB=mongo_dbapi_test .venv/bin/pyte
 - Transactions on MongoDB 3.6 are treated as no-op; 4.x+ (replica set) uses real sessions and the bundled 4.4 binary passes all tests.
 - Error messages are fixed strings per `docs/spec.md`. Keep logs at DEBUG only (default INFO is silent).
 
+## Roadmap (SQL support prioritization)
+1) Non-equi/RIGHT/FULL JOIN and correlated subqueries (TBD)  
+2) DISTINCT `UNION`, more complex CASE (multiple WHEN/OR/AND)  
+3) Additional window functions beyond ROW_NUMBER/RANK/DENSE_RANK (`LAG/LEAD/NTILE`, etc.)  
+4) Explicit performance/compat notes for large JOIN/window workloads  
+If you need one of these sooner, please open an issue and share your use case.
+
 ## License
 MIT License (see `LICENSE`). Provided as-is without warranty; commercial use permitted.
 

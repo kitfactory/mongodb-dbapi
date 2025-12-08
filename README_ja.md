@@ -114,6 +114,12 @@ async def get_user(user_id: str, conn: AsyncConnection = Depends(get_conn)):
 - MongoDB 3.6 などトランザクション未対応環境では `begin/commit/rollback` を no-op の成功扱いとします。4.x 以降（レプリカセット）ではセッションが有効で、同梱 4.4 で全テスト通過済みです。
 - エラーメッセージは `docs/spec.md` に定義された固定文字列です。ログは DEBUG 時のみ出力し、INFO では出しません。
 
+## 今後の対応優先度（SQL）
+1) 非等価 JOIN / RIGHT/FULL JOIN / 相関サブクエリ  
+2) DISTINCT `UNION`、複雑な CASE（複数 WHEN/AND/OR）  
+3) ROW_NUMBER 系以外のウィンドウ関数（`LAG/LEAD/NTILE` など）  
+4) 大規模 JOIN・ウィンドウ利用時のパフォーマンス/制約の明示  
+必要な項目があれば Issue などでユースケースを共有してください。
 ## チュートリアル
 - English: `docs/tutorial.md`
 - 日本語: `docs/tutorial_ja.md`
