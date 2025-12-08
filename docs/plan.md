@@ -33,8 +33,8 @@
 - [x] JOIN 投影を解禁する（JOIN_PROJECTION の制限を緩和し、JOIN 先列を別名含めて投影可能にする）。安全性のため制限事項を明文化。
 - [x] JOIN + WHERE/HAVING で alias 解決を強化する（JOIN したテーブルの別名をフィルタ/集約で扱えるようにする）。
 - [x] CASE を含む単純な集計（`SUM(CASE WHEN status='done' THEN 1 ELSE 0 END)` など）を `$cond` でサポートする。
-- [ ] HAVING で集計 alias を解決する（例: `HAVING SUM(total) >= 100` を集計結果に対して評価）。
-- [ ] 仕様/spec/README に対応範囲と制限（複雑な CASE/ネストは対象外など）を追記し、テストを追加する。
+- [x] HAVING で集計 alias を解決する（例: `HAVING SUM(total) >= 100` を集計結果に対して評価）。
+- [x] 仕様/spec/README に対応範囲と制限（複雑な CASE/ネストは対象外など）を追記し、テストを追加する。
 
 ## P6: ウィンドウ関数拡張（検討）
 - [ ] ROW_NUMBER 以外の基本ウィンドウ関数（`RANK/DENSE_RANK` など）について、MongoDB 5+ 前提で実装可否を調査・方針化する。
